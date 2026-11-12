@@ -1,9 +1,10 @@
+import hashlib
 from collections.abc import Generator
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
-from fastapi import Response
+from fastapi import HTTPException, Request, Response
 from pydantic import ValidationError
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
@@ -13,6 +14,7 @@ from app.core.config import Settings
 from app.db import Base
 from app.models import AuthSession, User
 from app.routers import passkeys
+from app.security.sessions import require_session
 
 
 @pytest.fixture
@@ -39,6 +41,21 @@ def production_settings(**overrides: str) -> dict[str, str]:
     }
     values.update(overrides)
     return values
+
+
+def make_request(raw_token: str) -> Request:
+    return Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/",
+            "headers": [(b"cookie", f"shop_session={raw_token}".encode())],
+            "query_string": b"",
+            "server": ("testserver", 443),
+            "client": ("127.0.0.1", 12345),
+            "scheme": "https",
+        }
+    )
 
 
 def test_production_configuration_accepts_explicit_secure_values() -> None:
@@ -105,3 +122,84 @@ def test_successful_login_rotates_previous_active_session(
     assert "httponly" in cookie
     assert "secure" in cookie
     assert "samesite=lax" in cookie
+
+
+def test_require_session_accepts_valid_session(
+    db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "app.security.sessions.get_settings",
+        lambda: SimpleNamespace(auth_cookie_name="shop_session"),
+    )
+    user = User(telegram_user_id="valid-session-user")
+    db.add(user)
+    db.flush()
+    raw_token = "valid-session-token"
+    session = AuthSession(
+        user_id=user.id,
+        token_hash=hashlib.sha256(raw_token.encode()).hexdigest(),
+        expires_at=datetime.now(UTC) + timedelta(hours=1),
+    )
+    db.add(session)
+    db.commit()
+
+    assert require_session(make_request(raw_token), db).id == session.id
+
+
+@pytest.mark.parametrize("revoked,expired", [(True, False), (False, True)])
+def test_require_session_rejects_revoked_or_expired_session(
+    db: Session, monkeypatch: pytest.MonkeyPatch, revoked: bool, expired: bool
+) -> None:
+    monkeypatch.setattr(
+        "app.security.sessions.get_settings",
+        lambda: SimpleNamespace(auth_cookie_name="shop_session"),
+    )
+    user = User(telegram_user_id=f"invalid-session-{revoked}-{expired}")
+    db.add(user)
+    db.flush()
+    raw_token = f"invalid-{revoked}-{expired}"
+    session = AuthSession(
+        user_id=user.id,
+        token_hash=hashlib.sha256(raw_token.encode()).hexdigest(),
+        expires_at=(
+            datetime.now(UTC) - timedelta(seconds=1)
+            if expired
+            else datetime.now(UTC) + timedelta(hours=1)
+        ),
+        revoked_at=datetime.now(UTC) if revoked else None,
+    )
+    db.add(session)
+    db.commit()
+
+    with pytest.raises(HTTPException) as error:
+        require_session(make_request(raw_token), db)
+    assert error.value.status_code == 401
+
+
+def test_logout_revokes_server_session_and_clears_cookie(
+    db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        passkeys,
+        "get_settings",
+        lambda: SimpleNamespace(app_env="production", auth_cookie_name="shop_session"),
+    )
+    user = User(telegram_user_id="logout-user")
+    db.add(user)
+    db.flush()
+    raw_token = "logout-session-token"
+    session = AuthSession(
+        user_id=user.id,
+        token_hash=hashlib.sha256(raw_token.encode()).hexdigest(),
+        expires_at=datetime.now(UTC) + timedelta(hours=1),
+    )
+    db.add(session)
+    db.commit()
+
+    response = Response()
+    result = passkeys.logout(make_request(raw_token), response, db)
+
+    db.refresh(session)
+    assert result == {"logged_out": True}
+    assert session.revoked_at is not None
+    assert "max-age=0" in response.headers["set-cookie"].lower()

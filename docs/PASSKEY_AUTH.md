@@ -81,6 +81,7 @@ Endpointy:
 - `POST /auth/passkeys/registration/verify`
 - `POST /auth/passkeys/authentication/options`
 - `POST /auth/passkeys/authentication/verify`
+- `GET /auth/passkeys` (lista aktywnych poświadczeń)
 - `GET /auth/passkeys/session`
 - `POST /auth/passkeys/logout`
 - `POST /auth/passkeys/{credential_id}/revoke`

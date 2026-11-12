@@ -82,9 +82,11 @@ def test_production_configuration_accepts_explicit_secure_values() -> None:
         {"webauthn_origin": "http://shop.example.com"},
         {"webauthn_origin": "https://attacker.example.net"},
         {"webauthn_origin": "https://shop.example.com/path"},
+        {"webauthn_origin": "https://shop.example.com/"},
         {"cors_allowed_origins": "https://*.example.com"},
         {"cors_allowed_origins": "https://attacker.example.net"},
         {"cors_allowed_origins": "https://shop.example.com/path"},
+        {"cors_allowed_origins": "https://shop.example.com/"},
     ],
 )
 def test_production_configuration_rejects_unsafe_values(overrides: dict[str, str]) -> None:

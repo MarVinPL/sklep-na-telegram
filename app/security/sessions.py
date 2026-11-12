@@ -1,5 +1,5 @@
 import hashlib
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import HTTPException, Request, status
 from sqlalchemy import select
@@ -18,7 +18,7 @@ def require_session(request: Request, db: Session) -> AuthSession:
     session = db.scalar(select(AuthSession).where(
         AuthSession.token_hash == token_hash,
         AuthSession.revoked_at.is_(None),
-        AuthSession.expires_at > datetime.now(timezone.utc),
+        AuthSession.expires_at > datetime.now(UTC),
     ))
     if session is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session expired")

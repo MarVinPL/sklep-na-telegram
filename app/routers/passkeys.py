@@ -116,8 +116,8 @@ def registration_options(
     options = generate_registration_options(
         rp_id=settings.webauthn_rp_id,
         rp_name=settings.webauthn_rp_name,
-        user_id=user.telegram_user_id.encode(),
-        user_name=f"telegram:{user.telegram_user_id}",
+        user_id=user.id.to_bytes(8, "big"),
+        user_name=f"telegram-user-{user.id}",
         user_display_name=identity["user"].get("first_name", "Telegram user"),
         exclude_credentials=[
             PublicKeyCredentialDescriptor(id=base64url_to_bytes(item.credential_id))
@@ -285,10 +285,6 @@ def revoke_passkey(
     ))
     if credential is None:
         raise HTTPException(status_code=404, detail="Active Passkey not found")
-    active_count = db.scalar(select(PasskeyCredential.id).where(
-        PasskeyCredential.user_id == user.id,
-        PasskeyCredential.revoked_at.is_(None),
-    ).limit(2))
     active_credentials = db.scalars(select(PasskeyCredential).where(
         PasskeyCredential.user_id == user.id,
         PasskeyCredential.revoked_at.is_(None),

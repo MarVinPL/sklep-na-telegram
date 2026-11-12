@@ -18,8 +18,8 @@ from webauthn import (
 from webauthn.helpers import base64url_to_bytes, bytes_to_base64url
 from webauthn.helpers.structs import (
     AuthenticatorSelectionCriteria,
-    ResidentKeyRequirement,
     PublicKeyCredentialDescriptor,
+    ResidentKeyRequirement,
     UserVerificationRequirement,
 )
 
@@ -77,7 +77,7 @@ def _new_challenge(db: Session, user: User, purpose: str, challenge: bytes, init
 def _consume_challenge(
     db: Session, challenge_id: str, user_id: int, purpose: str, init_data: str
 ) -> bytes:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     row = db.scalar(
         select(WebAuthnChallenge)
         .where(
@@ -100,7 +100,7 @@ def _consume_challenge(
 def _session_cookie(db: Session, user: User, response: Response) -> None:
     settings = get_settings()
     raw_token = secrets.token_urlsafe(32)
-    expires = datetime.now(timezone.utc) + timedelta(seconds=settings.auth_session_ttl)
+    expires = datetime.now(UTC) + timedelta(seconds=settings.auth_session_ttl)
     db.add(AuthSession(
         user_id=user.id,
         token_hash=hashlib.sha256(raw_token.encode()).hexdigest(),
@@ -280,7 +280,7 @@ def logout(
         token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
         session = db.scalar(select(AuthSession).where(AuthSession.token_hash == token_hash))
         if session and session.revoked_at is None:
-            session.revoked_at = datetime.now(timezone.utc)
+            session.revoked_at = datetime.now(UTC)
             db.commit()
     response.delete_cookie(
         settings.auth_cookie_name,
@@ -320,7 +320,7 @@ def revoke_passkey(
             status_code=409,
             detail="Register another Passkey before revoking the last one",
         )
-    credential.revoked_at = datetime.now(timezone.utc)
+    credential.revoked_at = datetime.now(UTC)
     db.commit()
     return {"revoked": True}
 

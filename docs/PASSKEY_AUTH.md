@@ -53,6 +53,61 @@ Zgodność trzeba potwierdzić testami na rzeczywistych wersjach Telegram Androi
 - Użytkownik może mieć kilka Passkeys i unieważnić utracone poświadczenie po ponownym potwierdzeniu tożsamości.
 - Nie loguj pełnych odpowiedzi WebAuthn ani danych, które mogłyby ujawnić wrażliwe metadane.
 
+### Sesje
+
+Aktualna implementacja przyjmuje politykę **jednej aktywnej sesji aplikacyjnej na użytkownika**. Po poprawnym ponownym uwierzytelnieniu wszystkie wcześniejsze, nieunieważnione sesje użytkownika są unieważniane w tej samej transakcji, w której zapisywana jest nowa sesja. Wylogowanie unieważnia bieżącą sesję po stronie serwera i usuwa cookie po stronie klienta.
+
+Jeśli produkt ma w przyszłości obsługiwać wiele równoległych urządzeń, polityka ta wymaga jawnej zmiany wraz z ekranem zarządzania sesjami i testami unieważniania.
+
+### Walidacja konfiguracji produkcyjnej
+
+Przy `APP_ENV=production` aplikacja odrzuca:
+- pusty token bota Telegram;
+- SQLite lub nieobsługiwany schemat URL bazy danych (wymagany PostgreSQL);
+- RP ID `localhost`;
+- origin inny niż HTTPS, zawierający ścieżkę/query/fragment lub host niezgodny z RP ID.
+
+Walidacja konfiguracji nie zastępuje bezpiecznego zarządzania sekretami, konfiguracji reverse proxy, TLS, CORS ani niezależnego przeglądu wdrożenia.
+
+### CSRF, Origin i CORS
+
+Backend stosuje ścisłą listę dozwolonych originów dla API Passkey:
+- `CORS_ALLOWED_ORIGINS` zawiera rozdzielone przecinkami, pełne originy (scheme + host + opcjonalny port), bez wildcardów i ścieżek;
+- jeśli zmienna jest pusta, używany jest pojedynczy `WEBAUTHN_ORIGIN`;
+- w produkcji każdy origin musi używać HTTPS, a jego host musi być równy RP ID lub jego subdomeną;
+- CORS dopuszcza credentials, ale wyłącznie dla skonfigurowanych originów, metod GET/POST i nagłówków Content-Type oraz X-Telegram-Init-Data;
+- wszystkie żądania modyfikujące stan w routerze Passkey wymagają nagłówka Origin dokładnie równego jednej z wartości allowlisty; brak Origin, `null`, wildcard i obcy origin są odrzucane kodem 403;
+- GET/HEAD pozostają metodami bezpiecznymi; preflight OPTIONS obsługuje middleware CORS.
+
+Cookie sesyjne pozostaje HttpOnly, Secure poza development i SameSite=Lax. Topologia wspierana przez tę konfigurację zakłada Mini App i API pod tym samym originem albo pod originami HTTPS w obrębie tej samej domeny RP. Jeśli wdrożenie wymaga różnych domen rejestrowalnych lub cross-site cookies, wymaga osobnego projektu i przeglądu — nie należy osłabiać SameSite ani dodawać wildcardów.
+
+Lokalnie przykładowy `.env.example` dopuszcza `http://localhost:5173` (Vite) i `http://localhost:8000` (API). Produkcja musi podać własne originy. Przed wdrożeniem trzeba potwierdzić, jaki Origin faktycznie wysyłają obsługiwane Telegram WebView na Androidzie/iOS/Desktop; ta lista nie zastępuje testów urządzeń ani niezależnego security review.
+
+### Rate limiting
+
+Wszystkie endpointy routera Passkey mają dwa niezależne limity:
+- per bezpośredni adres IP: domyślnie 10 żądań na 60 sekund (`AUTH_RATE_LIMIT_MAX_REQUESTS`);
+- per zweryfikowane konto Telegram: domyślnie 6 żądań na 60 sekund (`AUTH_RATE_LIMIT_ACCOUNT_MAX_REQUESTS`).
+
+Okno obu limitów można zmienić przez `AUTH_RATE_LIMIT_WINDOW_SECONDS`. Liczniki są przechowywane w PostgreSQL (SQLite wyłącznie do testów/lokalnego developmentu) i aktualizowane atomowym upsertem, więc są współdzielone między workerami. Konto jest identyfikowane dopiero po poprawnej weryfikacji nagłówka Telegram `initData`; błędne lub brakujące `initData` nadal podlega limitowi IP. Klucz konta jest HMAC z użyciem tokena bota, więc surowy numeryczny Telegram ID nie jest zapisany w tabeli limiterów. Odpowiedź po przekroczeniu limitu to HTTP 429 z nagłówkiem `Retry-After`.
+
+Adres IP pochodzi z połączenia bezpośredniego; nagłówki `X-Forwarded-For` nie są zaufane. W środowisku za reverse proxy należy skonfigurować zaufane proxy i dopiero wtedy rozszerzyć ekstrakcję adresu IP. Limity recovery, test współbieżności limitera na PostgreSQL, sprzątanie wygasłych liczników i audyt retencji pozostają otwarte w Issue #7.
+
+### Handoff do zewnętrznej przeglądarki i ochrona przed enumeracją
+
+Backend udostępnia bazowe endpointy handoff:
+- `POST /auth/passkeys/handoff` — weryfikuje Telegram `initData`, wydaje losowy token handoff (32 bajty entropii) i zwraca go Mini App. W bazie zapisywany jest wyłącznie SHA-256 tokenu.
+- `POST /auth/passkeys/handoff/authentication/options` — atomowo zużywa token, wiąże challenge WebAuthn z użytkownikiem i zwraca opcje logowania.
+- `POST /auth/passkeys/handoff/authentication/verify` — atomowo zużywa challenge, weryfikuje Passkey i dopiero wtedy tworzy sesję aplikacyjną.
+
+Token jest jednorazowy, domyślnie ważny 120 sekund (konfiguracja `PASSKEY_HANDOFF_TTL_SECONDS`, dozwolony zakres 30–300 sekund). Tokenu nie należy umieszczać w query string ani logach. Klient powinien przekazywać go w fragmencie URL (`#ticket=...`), odczytać po stronie przeglądarki i wysłać do endpointu options w treści POST. Fragment nie jest wysyłany w żądaniu HTTP do serwera. Nie przekazywać `initData` do zewnętrznej przeglądarki. Endpointy nie tworzą sesji przed poprawnym WebAuthn.
+
+Endpointy zwykłego logowania i handoff nie zwracają listy `allowCredentials`. Wymuszana jest rejestracja discoverable credential (`residentKey=required`), dzięki czemu liczba i obecność zapisanych poświadczeń nie są ujawniane w odpowiedzi options. Weryfikacja nadal wiąże credential z użytkownikiem wynikającym z Telegrama albo z jednorazowego handoff. Wcześniej zarejestrowane poświadczenia, które nie są discoverable, mogą wymagać ponownej rejestracji; nie należy uznawać migracji istniejących kont za zweryfikowaną bez testu urządzenia.
+
+**Integracja Mini App (gałąź `feat/passkey-handoff-miniapp`):** Telegram Mini App może zażądać biletu handoff i otworzyć osobną stronę `handoff.html#ticket=...` przez `Telegram.WebApp.openLink`. Strona handoff nie ładuje skryptu Telegrama; odczytuje token z fragmentu i natychmiast usuwa go z paska adresu przez `history.replaceState`. Token jest przekazywany wyłącznie w treści POST. Dostępny jest także ręczny przycisk otwarcia przeglądarki zewnętrznej przy ekranie logowania.
+
+**Zakres nadal niedokończony:** nie ma jeszcze testów end-to-end na rzeczywistych klientach Telegram Android/iOS/Desktop ani potwierdzenia, że `openLink` otwiera obsługiwaną przeglądarkę i że cookie sesyjne jest dostępne w docelowej topologii. Zmiana wymaga walidacji na urządzeniach i niezależnego security review przed produkcją.
+
 ## Testy akceptacyjne
 
 - Rejestracja i logowanie prawidłowym Passkey.
@@ -63,7 +118,9 @@ Zgodność trzeba potwierdzić testami na rzeczywistych wersjach Telegram Androi
 - Testy integracyjne i end-to-end w obsługiwanych przeglądarkach oraz na rzeczywistych klientach Telegram.
 - Brak ścieżki logowania PIN-em.
 
-## Status implementacji backendu i Mini App
+CI uruchamia testy współbieżnego zużycia challenge i tworzenia użytkownika na usłudze PostgreSQL. Testy te sprawdzają zachowanie blokad/unikalności w PostgreSQL; nie zastępują testów na rzeczywistych klientach Telegram ani niezależnego security review.
+
+## Status implementacji backendu
 
 Gałąź `feat/webauthn-passkey-backend` dodaje backendowy zakres:
 - walidację podpisu i świeżości Telegram `initData`;
@@ -76,11 +133,16 @@ Gałąź `feat/webauthn-passkey-backend` dodaje backendowy zakres:
 - unieważnianie Passkey po zalogowaniu, jeśli użytkownik ma jeszcze co najmniej jedno aktywne poświadczenie;
 - migrację Alembic i lokalną konfigurację Compose.
 
+Dodatkowa gałąź hardeningu Issue #9 wprowadza walidację konfiguracji produkcyjnej, rotację aktywnej sesji po ponownym logowaniu, obsługę wyścigu przy tworzeniu użytkownika oraz testy współbieżności uruchamiane na PostgreSQL w CI.
+
 Endpointy:
 - `POST /auth/passkeys/registration/options`
 - `POST /auth/passkeys/registration/verify`
 - `POST /auth/passkeys/authentication/options`
 - `POST /auth/passkeys/authentication/verify`
+- `POST /auth/passkeys/handoff` (wydanie jednorazowego biletu z Telegram initData)
+- `POST /auth/passkeys/handoff/authentication/options` (atomowe zużycie biletu i rozpoczęcie WebAuthn)
+- `POST /auth/passkeys/handoff/authentication/verify` (weryfikacja Passkey i utworzenie sesji)
 - `GET /auth/passkeys` (lista aktywnych poświadczeń)
 - `GET /auth/passkeys/session`
 - `POST /auth/passkeys/logout`
@@ -88,6 +150,4 @@ Endpointy:
 
 Każdy etap ceremonii wymaga zweryfikowanego nagłówka `X-Telegram-Init-Data`. Logowanie wymaga zarówno aktualnego kontekstu Telegrama, jak i prawidłowego Passkey. PIN nie jest fallbackiem.
 
-Frontendowy prototyp Mini App znajduje się w `miniapp/` i wywołuje `navigator.credentials.create/get`, obsługuje sesję oraz listowanie/unieważnianie poświadczeń. Nie potwierdzono jeszcze builda frontendu ani testów end-to-end z rzeczywistymi authenticatorami i klientami Telegram WebView. Brakuje pełnego procesu odzyskiwania i przeglądu bezpieczeństwa. Rate limiting musi zostać dodany na warstwie API/gateway przed wystawieniem publicznym. Nie deklarujemy zgodności Telegram Android/iOS/Desktop bez testów na rzeczywistych klientach.
-
-Lokalnie ustaw `TELEGRAM_BOT_TOKEN`, `WEBAUTHN_RP_ID` i `WEBAUTHN_ORIGIN`. W środowisku produkcyjnym wymagane są HTTPS oraz dokładne dopasowanie RP ID i originu.
+To nadal nie jest kompletna funkcja produkcyjna: nie ma jeszcze testów kryptograficznych end-to-end z rzeczywistymi authenticatorami, testów Telegram WebView, pełnego procesu odzyskiwania, limitów per konto ani niezależnego security review. Nie deklarujemy zgodności Telegram Android/iOS/Desktop bez testów na rzeczywistych klientach.

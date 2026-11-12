@@ -69,8 +69,6 @@ Przy `APP_ENV=production` aplikacja odrzuca:
 
 Walidacja konfiguracji nie zastępuje bezpiecznego zarządzania sekretami, konfiguracji reverse proxy, TLS, CORS ani niezależnego przeglądu wdrożenia.
 
-
-
 ### CSRF, Origin i CORS
 
 Backend stosuje ścisłą listę dozwolonych originów dla API Passkey:
@@ -84,6 +82,16 @@ Backend stosuje ścisłą listę dozwolonych originów dla API Passkey:
 Cookie sesyjne pozostaje HttpOnly, Secure poza development i SameSite=Lax. Topologia wspierana przez tę konfigurację zakłada Mini App i API pod tym samym originem albo pod originami HTTPS w obrębie tej samej domeny RP. Jeśli wdrożenie wymaga różnych domen rejestrowalnych lub cross-site cookies, wymaga osobnego projektu i przeglądu — nie należy osłabiać SameSite ani dodawać wildcardów.
 
 Lokalnie przykładowy `.env.example` dopuszcza `http://localhost:5173` (Vite) i `http://localhost:8000` (API). Produkcja musi podać własne originy. Przed wdrożeniem trzeba potwierdzić, jaki Origin faktycznie wysyłają obsługiwane Telegram WebView na Androidzie/iOS/Desktop; ta lista nie zastępuje testów urządzeń ani niezależnego security review.
+
+### Rate limiting
+
+Wszystkie endpointy routera Passkey mają dwa niezależne limity:
+- per bezpośredni adres IP: domyślnie 10 żądań na 60 sekund (`AUTH_RATE_LIMIT_MAX_REQUESTS`);
+- per zweryfikowane konto Telegram: domyślnie 6 żądań na 60 sekund (`AUTH_RATE_LIMIT_ACCOUNT_MAX_REQUESTS`).
+
+Okno obu limitów można zmienić przez `AUTH_RATE_LIMIT_WINDOW_SECONDS`. Liczniki są przechowywane w PostgreSQL (SQLite wyłącznie do testów/lokalnego developmentu) i aktualizowane atomowym upsertem, więc są współdzielone między workerami. Konto jest identyfikowane dopiero po poprawnej weryfikacji nagłówka Telegram `initData`; błędne lub brakujące `initData` nadal podlega limitowi IP. Klucz konta jest HMAC z użyciem tokena bota, więc surowy numeryczny Telegram ID nie jest zapisany w tabeli limiterów. Odpowiedź po przekroczeniu limitu to HTTP 429 z nagłówkiem `Retry-After`.
+
+Adres IP pochodzi z połączenia bezpośredniego; nagłówki `X-Forwarded-For` nie są zaufane. W środowisku za reverse proxy należy skonfigurować zaufane proxy i dopiero wtedy rozszerzyć ekstrakcję adresu IP. Limity recovery, test współbieżności limitera na PostgreSQL, sprzątanie wygasłych liczników i audyt retencji pozostają otwarte w Issue #7.
 
 ## Testy akceptacyjne
 
@@ -124,4 +132,4 @@ Endpointy:
 
 Każdy etap ceremonii wymaga zweryfikowanego nagłówka `X-Telegram-Init-Data`. Logowanie wymaga zarówno aktualnego kontekstu Telegrama, jak i prawidłowego Passkey. PIN nie jest fallbackiem.
 
-To nadal nie jest kompletna funkcja produkcyjna: nie ma jeszcze testów kryptograficznych end-to-end z rzeczywistymi authenticatorami, testów Telegram WebView, pełnego procesu odzyskiwania, rate limitingu ani niezależnego security review. Nie deklarujemy zgodności Telegram Android/iOS/Desktop bez testów na rzeczywistych klientach.
+To nadal nie jest kompletna funkcja produkcyjna: nie ma jeszcze testów kryptograficznych end-to-end z rzeczywistymi authenticatorami, testów Telegram WebView, pełnego procesu odzyskiwania, limitów per konto ani niezależnego security review. Nie deklarujemy zgodności Telegram Android/iOS/Desktop bez testów na rzeczywistych klientach.

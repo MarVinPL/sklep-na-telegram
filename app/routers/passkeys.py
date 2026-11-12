@@ -47,6 +47,18 @@ def _get_or_create_user(db: Session, telegram_user_id: str) -> User:
     return user
 
 
+def _require_existing_passkey_session(request: Request, db: Session, user: User) -> None:
+    existing = db.scalars(select(PasskeyCredential).where(
+        PasskeyCredential.user_id == user.id,
+        PasskeyCredential.revoked_at.is_(None),
+    )).first()
+    if existing is None:
+        return
+    session = require_session(request, db)
+    if session.user_id != user.id:
+        raise HTTPException(status_code=401, detail="Passkey management requires this user's session")
+
+
 def _new_challenge(db: Session, user: User, purpose: str, challenge: bytes, init_data: str) -> str:
     settings = get_settings()
     challenge_id = str(uuid.uuid4())
@@ -106,11 +118,13 @@ def _session_cookie(db: Session, user: User, response: Response) -> None:
 
 @router.post("/registration/options")
 def registration_options(
+    request: Request,
     x_telegram_init_data: str = Header(..., alias="X-Telegram-Init-Data"),
     db: Session = Depends(get_db),
 ) -> dict:
     identity = verify_telegram_init_data(x_telegram_init_data)
     user = _get_or_create_user(db, identity["telegram_user_id"])
+    _require_existing_passkey_session(request, db, user)
     settings = get_settings()
     existing = db.scalars(select(PasskeyCredential).where(
         PasskeyCredential.user_id == user.id, PasskeyCredential.revoked_at.is_(None)
@@ -137,11 +151,13 @@ def registration_options(
 @router.post("/registration/verify")
 def registration_verify(
     payload: FinishRequest,
+    request: Request,
     x_telegram_init_data: str = Header(..., alias="X-Telegram-Init-Data"),
     db: Session = Depends(get_db),
 ) -> dict:
     identity = verify_telegram_init_data(x_telegram_init_data)
     user = _get_or_create_user(db, identity["telegram_user_id"])
+    _require_existing_passkey_session(request, db, user)
     challenge = _consume_challenge(db, payload.challenge_id, user.id, "registration", x_telegram_init_data)
     settings = get_settings()
     try:
@@ -264,7 +280,7 @@ def logout(
         if session and session.revoked_at is None:
             session.revoked_at = datetime.now(timezone.utc)
             db.commit()
-    response.delete_cookie(settings.auth_cookie_name, path="/", httponly=True, secure=settings.app_env == "production", samesite="lax")
+    response.delete_cookie(settings.auth_cookie_name, path="/", httponly=True, secure=settings.app_env != "development", samesite="lax")
     return {"logged_out": True}
 
 

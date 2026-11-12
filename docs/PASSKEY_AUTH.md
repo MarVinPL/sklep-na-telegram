@@ -53,6 +53,22 @@ Zgodność trzeba potwierdzić testami na rzeczywistych wersjach Telegram Androi
 - Użytkownik może mieć kilka Passkeys i unieważnić utracone poświadczenie po ponownym potwierdzeniu tożsamości.
 - Nie loguj pełnych odpowiedzi WebAuthn ani danych, które mogłyby ujawnić wrażliwe metadane.
 
+### Sesje
+
+Aktualna implementacja przyjmuje politykę **jednej aktywnej sesji aplikacyjnej na użytkownika**. Po poprawnym ponownym uwierzytelnieniu wszystkie wcześniejsze, nieunieważnione sesje użytkownika są unieważniane w tej samej transakcji, w której zapisywana jest nowa sesja. Wylogowanie unieważnia bieżącą sesję po stronie serwera i usuwa cookie po stronie klienta.
+
+Jeśli produkt ma w przyszłości obsługiwać wiele równoległych urządzeń, polityka ta wymaga jawnej zmiany wraz z ekranem zarządzania sesjami i testami unieważniania.
+
+### Walidacja konfiguracji produkcyjnej
+
+Przy `APP_ENV=production` aplikacja odrzuca:
+- pusty token bota Telegram;
+- SQLite lub nieobsługiwany schemat URL bazy danych (wymagany PostgreSQL);
+- RP ID `localhost`;
+- origin inny niż HTTPS, zawierający ścieżkę/query/fragment lub host niezgodny z RP ID.
+
+Walidacja konfiguracji nie zastępuje bezpiecznego zarządzania sekretami, konfiguracji reverse proxy, TLS, CORS ani niezależnego przeglądu wdrożenia.
+
 ## Testy akceptacyjne
 
 - Rejestracja i logowanie prawidłowym Passkey.
@@ -62,6 +78,8 @@ Zgodność trzeba potwierdzić testami na rzeczywistych wersjach Telegram Androi
 - Nie można użyć poświadczenia innego użytkownika.
 - Testy integracyjne i end-to-end w obsługiwanych przeglądarkach oraz na rzeczywistych klientach Telegram.
 - Brak ścieżki logowania PIN-em.
+
+CI uruchamia testy współbieżnego zużycia challenge i tworzenia użytkownika na usłudze PostgreSQL. Testy te sprawdzają zachowanie blokad/unikalności w PostgreSQL; nie zastępują testów na rzeczywistych klientach Telegram ani niezależnego security review.
 
 ## Status implementacji backendu
 
@@ -76,6 +94,8 @@ Gałąź `feat/webauthn-passkey-backend` dodaje backendowy zakres:
 - unieważnianie Passkey po zalogowaniu, jeśli użytkownik ma jeszcze co najmniej jedno aktywne poświadczenie;
 - migrację Alembic i lokalną konfigurację Compose.
 
+Dodatkowa gałąź hardeningu Issue #9 wprowadza walidację konfiguracji produkcyjnej, rotację aktywnej sesji po ponownym logowaniu, obsługę wyścigu przy tworzeniu użytkownika oraz testy współbieżności uruchamiane na PostgreSQL w CI.
+
 Endpointy:
 - `POST /auth/passkeys/registration/options`
 - `POST /auth/passkeys/registration/verify`
@@ -88,6 +108,4 @@ Endpointy:
 
 Każdy etap ceremonii wymaga zweryfikowanego nagłówka `X-Telegram-Init-Data`. Logowanie wymaga zarówno aktualnego kontekstu Telegrama, jak i prawidłowego Passkey. PIN nie jest fallbackiem.
 
-To nadal nie jest kompletna funkcja produkcyjna: nie ma jeszcze frontendowej Mini App wywołującej `navigator.credentials.create/get`, testów kryptograficznych end-to-end z rzeczywistymi authenticatorami, testów Telegram WebView, pełnego procesu odzyskiwania ani przeglądu bezpieczeństwa. Rate limiting musi zostać dodany na warstwie API/gateway przed wystawieniem publicznym. Nie deklarujemy zgodności Telegram Android/iOS/Desktop bez testów na rzeczywistych klientach.
-
-Lokalnie ustaw `TELEGRAM_BOT_TOKEN`, `WEBAUTHN_RP_ID` i `WEBAUTHN_ORIGIN`. W środowisku produkcyjnym wymagane są HTTPS oraz dokładne dopasowanie RP ID i originu.
+To nadal nie jest kompletna funkcja produkcyjna: nie ma jeszcze testów kryptograficznych end-to-end z rzeczywistymi authenticatorami, testów Telegram WebView, pełnego procesu odzyskiwania, rate limitingu ani niezależnego security review. Nie deklarujemy zgodności Telegram Android/iOS/Desktop bez testów na rzeczywistych klientach.

@@ -15,5 +15,6 @@ WebAuthn requires a secure context (HTTPS or localhost) and an exact RP ID/origi
 
 - This is an initial client, not a production-ready storefront.
 - Telegram WebView support must be validated on real Android, iOS and Desktop clients.
-- External-browser handoff/recovery is not implemented.
+- External-browser Passkey authentication handoff is implemented in the client; real Telegram/device validation is still outstanding.
+- Account recovery is not implemented and has no PIN fallback.
 - End-to-end tests with physical authenticators and full recovery flow remain outstanding.

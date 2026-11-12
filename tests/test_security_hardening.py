@@ -81,6 +81,9 @@ def test_production_configuration_accepts_explicit_secure_values() -> None:
         {"webauthn_origin": "http://shop.example.com"},
         {"webauthn_origin": "https://attacker.example.net"},
         {"webauthn_origin": "https://shop.example.com/path"},
+        {"cors_allowed_origins": "https://*.example.com"},
+        {"cors_allowed_origins": "https://attacker.example.net"},
+        {"cors_allowed_origins": "https://shop.example.com/path"},
     ],
 )
 def test_production_configuration_rejects_unsafe_values(overrides: dict[str, str]) -> None:
@@ -245,3 +248,22 @@ def test_safe_read_method_does_not_require_origin(
         lambda: SimpleNamespace(allowed_origins=["https://shop.example.com"]),
     )
     assert require_allowed_origin(make_request(method="GET")) is None
+
+
+
+def test_allowed_origins_uses_exact_comma_separated_values() -> None:
+    settings = Settings(
+        _env_file=None,
+        **production_settings(
+            cors_allowed_origins="https://shop.example.com,https://admin.example.com"
+        ),
+    )
+    assert settings.allowed_origins == [
+        "https://shop.example.com",
+        "https://admin.example.com",
+    ]
+
+
+def test_allowed_origins_defaults_to_webauthn_origin() -> None:
+    settings = Settings(_env_file=None, **production_settings())
+    assert settings.allowed_origins == ["https://shop.example.com"]

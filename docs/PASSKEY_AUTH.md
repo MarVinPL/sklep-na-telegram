@@ -104,7 +104,9 @@ Token jest jednorazowy, domyślnie ważny 120 sekund (konfiguracja `PASSKEY_HAND
 
 Endpointy zwykłego logowania i handoff nie zwracają listy `allowCredentials`. Wymuszana jest rejestracja discoverable credential (`residentKey=required`), dzięki czemu liczba i obecność zapisanych poświadczeń nie są ujawniane w odpowiedzi options. Weryfikacja nadal wiąże credential z użytkownikiem wynikającym z Telegrama albo z jednorazowego handoff. Wcześniej zarejestrowane poświadczenia, które nie są discoverable, mogą wymagać ponownej rejestracji; nie należy uznawać migracji istniejących kont za zweryfikowaną bez testu urządzenia.
 
-**Zakres niedokończony:** Mini App nie ma jeszcze ekranu/route odbierającego fragment URL, otwierania przeglądarki zewnętrznej ani end-to-end testu na Telegram Android/iOS/Desktop. Ta zmiana backendu nie oznacza, że handoff jest gotowy do testów użytkownika lub produkcji.
+**Integracja Mini App (gałąź `feat/passkey-handoff-miniapp`):** Telegram Mini App może zażądać biletu handoff i otworzyć osobną stronę `handoff.html#ticket=...` przez `Telegram.WebApp.openLink`. Strona handoff nie ładuje skryptu Telegrama; odczytuje token z fragmentu i natychmiast usuwa go z paska adresu przez `history.replaceState`. Token jest przekazywany wyłącznie w treści POST. Dostępny jest także ręczny przycisk otwarcia przeglądarki zewnętrznej przy ekranie logowania.
+
+**Zakres nadal niedokończony:** nie ma jeszcze testów end-to-end na rzeczywistych klientach Telegram Android/iOS/Desktop ani potwierdzenia, że `openLink` otwiera obsługiwaną przeglądarkę i że cookie sesyjne jest dostępne w docelowej topologii. Zmiana wymaga walidacji na urządzeniach i niezależnego security review przed produkcją.
 
 ## Testy akceptacyjne
 

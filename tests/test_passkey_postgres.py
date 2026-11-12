@@ -1,6 +1,7 @@
 import hashlib
 import os
 from concurrent.futures import ThreadPoolExecutor
+from types import SimpleNamespace
 from datetime import UTC, datetime, timedelta
 from threading import Barrier
 
@@ -10,7 +11,8 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 
 from app.db import Base
-from app.models import User, WebAuthnChallenge
+from app.models import AuthRateLimit, User, WebAuthnChallenge
+from app.security.rate_limit import consume_ip_rate_limit
 from app.routers.passkeys import _consume_challenge, _get_or_create_user
 
 DATABASE_URL = os.getenv("TEST_DATABASE_URL")
@@ -105,3 +107,37 @@ def test_postgres_concurrent_telegram_user_creation_recovers_unique_race(
             select(User).where(User.telegram_user_id == "pg-user-create-race")
         ).all()
         assert len(matches) == 1
+
+
+
+def test_postgres_rate_limit_upsert_is_atomic_under_concurrency(
+    postgres_session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "app.security.rate_limit.get_settings",
+        lambda: SimpleNamespace(auth_rate_limit_window_seconds=60),
+    )
+    worker_count = 8
+    barrier = Barrier(worker_count)
+    now = datetime(2026, 11, 12, 12, 0, 15, tzinfo=UTC)
+
+    def consume():
+        with postgres_session_factory() as session:
+            barrier.wait(timeout=10)
+            return consume_ip_rate_limit(
+                session, client_ip="198.51.100.42", now=now
+            )[0]
+
+    with ThreadPoolExecutor(max_workers=worker_count) as pool:
+        counts = list(pool.map(lambda _: consume(), range(worker_count)))
+
+    assert sorted(counts) == list(range(1, worker_count + 1))
+    with postgres_session_factory() as session:
+        rows = session.scalars(
+            select(AuthRateLimit).where(
+                AuthRateLimit.bucket_key
+                == hashlib.sha256(b"ip\\0" + b"198.51.100.42").hexdigest()
+            )
+        ).all()
+        assert len(rows) == 1
+        assert rows[0].request_count == worker_count

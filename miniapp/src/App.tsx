@@ -66,7 +66,6 @@ export default function App() {
       const options = await api<CeremonyOptions>("/auth/passkeys/authentication/options", {
         method: "POST",
       });
-      await getPasskey(options);
       const credential = await getPasskey(options);
       await api("/auth/passkeys/authentication/verify", {
         method: "POST",

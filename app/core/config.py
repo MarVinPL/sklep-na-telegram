@@ -1,5 +1,7 @@
 from functools import lru_cache
+from urllib.parse import urlsplit
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -22,6 +24,42 @@ class Settings(BaseSettings):
     webauthn_challenge_ttl: int = 180
     auth_session_ttl: int = 86400
     auth_cookie_name: str = "shop_session"
+
+    @model_validator(mode="after")
+    def validate_production_security(self) -> "Settings":
+        if self.app_env.lower() != "production":
+            return self
+
+        if not self.telegram_bot_token.strip():
+            raise ValueError("TELEGRAM_BOT_TOKEN is required in production")
+
+        if self.database_url.lower().startswith("sqlite:"):
+            raise ValueError("DATABASE_URL must use PostgreSQL in production")
+        if not self.database_url.lower().startswith(
+            ("postgresql://", "postgresql+psycopg://")
+        ):
+            raise ValueError("DATABASE_URL must use a supported PostgreSQL URL in production")
+
+        rp_id = self.webauthn_rp_id.strip().lower().rstrip(".")
+        if not rp_id or rp_id == "localhost" or rp_id.endswith(".localhost"):
+            raise ValueError("WEBAUTHN_RP_ID must be a public domain in production")
+
+        origin = urlsplit(self.webauthn_origin)
+        origin_host = (origin.hostname or "").lower().rstrip(".")
+        if (
+            origin.scheme != "https"
+            or not origin_host
+            or origin.username
+            or origin.password
+            or origin.path not in ("", "/")
+            or origin.query
+            or origin.fragment
+        ):
+            raise ValueError("WEBAUTHN_ORIGIN must be an exact HTTPS origin in production")
+        if origin_host != rp_id and not origin_host.endswith(f".{rp_id}"):
+            raise ValueError("WEBAUTHN_ORIGIN host must match WEBAUTHN_RP_ID")
+
+        return self
 
 
 @lru_cache

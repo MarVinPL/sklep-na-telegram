@@ -36,12 +36,12 @@ def test_ip_rate_limit_increments_in_current_window(db: Session, monkeypatch: py
     monkeypatch.setattr("app.security.rate_limit.get_settings", _settings)
     now = datetime(2026, 11, 12, 12, 0, 15, tzinfo=UTC)
 
-    assert consume_ip_rate_limit(db, client_ip="192.0.2.10", route="/login", now=now) == (1, 45)
-    assert consume_ip_rate_limit(db, client_ip="192.0.2.10", route="/login", now=now) == (2, 45)
+    assert consume_ip_rate_limit(db, client_ip="192.0.2.10", now=now) == (1, 45)
+    assert consume_ip_rate_limit(db, client_ip="192.0.2.10", now=now) == (2, 45)
     assert consume_ip_rate_limit(db, client_ip="192.0.2.10", route="/login", now=now) == (3, 45)
 
 
-def test_ip_rate_limit_resets_and_isolated_by_ip_and_route(
+def test_ip_rate_limit_resets_and_isolated_by_ip(
     db: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr("app.security.rate_limit.get_settings", _settings)
@@ -51,10 +51,10 @@ def test_ip_rate_limit_resets_and_isolated_by_ip_and_route(
     assert consume_ip_rate_limit(db, client_ip="192.0.2.10", route="/login", now=now)[0] == 1
     assert consume_ip_rate_limit(db, client_ip="192.0.2.10", route="/login", now=later)[0] == 1
     assert consume_ip_rate_limit(db, client_ip="192.0.2.11", route="/login", now=now)[0] == 1
-    assert consume_ip_rate_limit(db, client_ip="192.0.2.10", route="/logout", now=now)[0] == 1
+    assert consume_ip_rate_limit(db, client_ip="192.0.2.10", now=now)[0] == 1
 
 
-def test_account_limit_isolated_by_telegram_account_and_route(
+def test_account_limit_isolated_by_telegram_account(
     db: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr("app.security.rate_limit.get_settings", _settings)

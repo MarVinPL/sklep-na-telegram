@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import secrets
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, LargeBinary, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -11,6 +12,7 @@ class User(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     telegram_user_id: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    user_handle: Mapped[bytes] = mapped_column(LargeBinary(64), unique=True, index=True, default=lambda: secrets.token_bytes(64))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     credentials: Mapped[list["PasskeyCredential"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"

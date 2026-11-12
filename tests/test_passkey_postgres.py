@@ -10,8 +10,8 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 
 from app.db import Base
-from app.models import User, WebAuthnChallenge
-from app.routers.passkeys import _consume_challenge, _get_or_create_user
+from app.models import PasskeyHandoff, User, WebAuthnChallenge
+from app.routers.passkeys import _consume_challenge, _consume_handoff, _get_or_create_user
 
 DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 pytestmark = pytest.mark.skipif(not DATABASE_URL, reason="TEST_DATABASE_URL is not configured")
@@ -105,3 +105,38 @@ def test_postgres_concurrent_telegram_user_creation_recovers_unique_race(
             select(User).where(User.telegram_user_id == "pg-user-create-race")
         ).all()
         assert len(matches) == 1
+
+
+
+def test_postgres_handoff_token_is_consumed_by_only_one_parallel_request(
+    postgres_session_factory,
+) -> None:
+    raw_token = "postgres-one-time-handoff-token"
+    with postgres_session_factory() as setup:
+        user = User(telegram_user_id="pg-handoff-race")
+        setup.add(user)
+        setup.flush()
+        setup.add(PasskeyHandoff(
+            user_id=user.id,
+            purpose="authentication",
+            token_hash=hashlib.sha256(raw_token.encode()).hexdigest(),
+            expires_at=datetime.now(UTC) + timedelta(minutes=2),
+        ))
+        setup.commit()
+        user_id = user.id
+
+    barrier = Barrier(2)
+
+    def consume():
+        with postgres_session_factory() as session:
+            barrier.wait(timeout=10)
+            try:
+                return _consume_handoff(session, raw_token)
+            except HTTPException:
+                return None
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(lambda _: consume(), range(2)))
+
+    assert results.count(user_id) == 1
+    assert results.count(None) == 1

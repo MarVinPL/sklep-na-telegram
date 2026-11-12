@@ -26,7 +26,7 @@ from webauthn.helpers.structs import (
 
 from app.core.config import get_settings
 from app.db import get_db
-from app.models import AuthSession, PasskeyCredential, User, WebAuthnChallenge
+from app.models import AuthSession, PasskeyCredential, PasskeyHandoff, User, WebAuthnChallenge
 from app.security.origins import require_allowed_origin
 from app.security.rate_limit import enforce_ip_rate_limit
 from app.security.sessions import require_session
@@ -43,6 +43,15 @@ class FinishRequest(BaseModel):
     challenge_id: str
     credential: dict
     name: str | None = Field(default=None, max_length=120)
+
+
+class HandoffOptionsRequest(BaseModel):
+    handoff_token: str = Field(min_length=32, max_length=128)
+
+
+class HandoffVerifyRequest(BaseModel):
+    challenge_id: str
+    credential: dict
 
 
 def _get_or_create_user(db: Session, telegram_user_id: str) -> User:
@@ -172,7 +181,7 @@ def registration_options(
             for item in existing
         ],
         authenticator_selection=AuthenticatorSelectionCriteria(
-            resident_key=ResidentKeyRequirement.PREFERRED,
+            resident_key=ResidentKeyRequirement.REQUIRED,
             user_verification=UserVerificationRequirement.REQUIRED,
         ),
     )
@@ -228,18 +237,11 @@ def authentication_options(
 ) -> dict:
     identity = verify_telegram_init_data(x_telegram_init_data)
     user = _get_or_create_user(db, identity["telegram_user_id"])
-    credentials = db.scalars(select(PasskeyCredential).where(
-        PasskeyCredential.user_id == user.id, PasskeyCredential.revoked_at.is_(None)
-    )).all()
-    if not credentials:
-        raise HTTPException(status_code=404, detail="No active Passkey is registered")
     settings = get_settings()
+    # Discoverable credentials keep the response independent of account credential count.
+    # This avoids exposing whether/how many Passkeys are registered for this Telegram identity.
     options = generate_authentication_options(
         rp_id=settings.webauthn_rp_id,
-        allow_credentials=[
-            PublicKeyCredentialDescriptor(id=base64url_to_bytes(item.credential_id))
-            for item in credentials
-        ],
         user_verification=UserVerificationRequirement.REQUIRED,
     )
     challenge_id = _new_challenge(db, user, "authentication", options.challenge, x_telegram_init_data)
@@ -281,6 +283,133 @@ def authentication_verify(
     credential.device_type = str(verified.credential_device_type)
     credential.backed_up = verified.credential_backed_up
     _session_cookie(db, user, response)
+    return {"authenticated": True}
+
+
+def _new_handoff(db: Session, user: User, purpose: str = "authentication") -> str:
+    settings = get_settings()
+    raw_token = secrets.token_urlsafe(32)
+    db.add(PasskeyHandoff(
+        user_id=user.id,
+        purpose=purpose,
+        token_hash=hashlib.sha256(raw_token.encode()).hexdigest(),
+        expires_at=datetime.now(UTC) + timedelta(seconds=settings.passkey_handoff_ttl_seconds),
+    ))
+    db.commit()
+    return raw_token
+
+
+def _consume_handoff(db: Session, raw_token: str, purpose: str = "authentication") -> int:
+    now = datetime.now(UTC)
+    token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+    user_id = db.execute(
+        update(PasskeyHandoff)
+        .where(
+            PasskeyHandoff.token_hash == token_hash,
+            PasskeyHandoff.purpose == purpose,
+            PasskeyHandoff.consumed_at.is_(None),
+            PasskeyHandoff.expires_at > now,
+        )
+        .values(consumed_at=now)
+        .execution_options(synchronize_session=False)
+        .returning(PasskeyHandoff.user_id)
+    ).scalar_one_or_none()
+    db.commit()
+    if user_id is None:
+        raise HTTPException(status_code=400, detail="Handoff invalid, expired or already used")
+    return user_id
+
+
+def _consume_handoff_challenge(db: Session, challenge_id: str) -> tuple[int, bytes]:
+    now = datetime.now(UTC)
+    row = db.execute(
+        update(WebAuthnChallenge)
+        .where(
+            WebAuthnChallenge.id == challenge_id,
+            WebAuthnChallenge.purpose == "handoff_authentication",
+            WebAuthnChallenge.consumed_at.is_(None),
+            WebAuthnChallenge.expires_at > now,
+        )
+        .values(consumed_at=now)
+        .execution_options(synchronize_session=False)
+        .returning(WebAuthnChallenge.user_id, WebAuthnChallenge.challenge)
+    ).one_or_none()
+    db.commit()
+    if row is None:
+        raise HTTPException(status_code=400, detail="Challenge invalid, expired or already used")
+    return row.user_id, row.challenge
+
+
+@router.post("/handoff")
+def create_handoff(
+    x_telegram_init_data: str = Header(..., alias="X-Telegram-Init-Data"),
+    db: Session = Depends(get_db),
+) -> dict:
+    identity = verify_telegram_init_data(x_telegram_init_data)
+    user = _get_or_create_user(db, identity["telegram_user_id"])
+    settings = get_settings()
+    return {
+        "handoff_token": _new_handoff(db, user),
+        "expires_in": settings.passkey_handoff_ttl_seconds,
+    }
+
+
+@router.post("/handoff/authentication/options")
+def handoff_authentication_options(
+    payload: HandoffOptionsRequest,
+    db: Session = Depends(get_db),
+) -> dict:
+    user_id = _consume_handoff(db, payload.handoff_token)
+    settings = get_settings()
+    options = generate_authentication_options(
+        rp_id=settings.webauthn_rp_id,
+        user_verification=UserVerificationRequirement.REQUIRED,
+    )
+    challenge_id = str(uuid.uuid4())
+    db.add(WebAuthnChallenge(
+        id=challenge_id,
+        user_id=user_id,
+        purpose="handoff_authentication",
+        challenge=options.challenge,
+        context_hash=hashlib.sha256(payload.handoff_token.encode()).hexdigest(),
+        expires_at=datetime.now(UTC) + timedelta(seconds=settings.webauthn_challenge_ttl),
+    ))
+    db.commit()
+    return {"challenge_id": challenge_id, "publicKey": json.loads(options_to_json(options))}
+
+
+@router.post("/handoff/authentication/verify")
+def handoff_authentication_verify(
+    payload: HandoffVerifyRequest,
+    response: Response,
+    db: Session = Depends(get_db),
+) -> dict:
+    user_id, challenge = _consume_handoff_challenge(db, payload.challenge_id)
+    credential_id = payload.credential.get("id")
+    credential = db.scalar(select(PasskeyCredential).where(
+        PasskeyCredential.credential_id == credential_id,
+        PasskeyCredential.user_id == user_id,
+        PasskeyCredential.revoked_at.is_(None),
+    ))
+    if credential is None:
+        raise HTTPException(status_code=401, detail="Passkey authentication failed")
+    settings = get_settings()
+    try:
+        verified = verify_authentication_response(
+            credential=payload.credential,
+            expected_challenge=challenge,
+            expected_rp_id=settings.webauthn_rp_id,
+            expected_origin=settings.webauthn_origin,
+            credential_public_key=credential.public_key,
+            credential_current_sign_count=credential.sign_count,
+            require_user_verification=True,
+        )
+    except Exception:  # noqa: BLE001 - normalize all verifier failures into a generic response
+        raise HTTPException(status_code=401, detail="Passkey authentication failed") from None
+    credential.sign_count = verified.new_sign_count
+    credential.device_type = str(verified.credential_device_type)
+    credential.backed_up = verified.credential_backed_up
+    _session_cookie(db, db.get(User, user_id), response)
     return {"authenticated": True}
 
 

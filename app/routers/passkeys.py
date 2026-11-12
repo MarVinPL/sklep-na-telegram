@@ -27,10 +27,15 @@ from webauthn.helpers.structs import (
 from app.core.config import get_settings
 from app.db import get_db
 from app.models import AuthSession, PasskeyCredential, User, WebAuthnChallenge
+from app.security.origins import require_allowed_origin
 from app.security.sessions import require_session
 from app.security.telegram import verify_telegram_init_data
 
-router = APIRouter(prefix="/auth/passkeys", tags=["passkeys"])
+router = APIRouter(
+    prefix="/auth/passkeys",
+    tags=["passkeys"],
+    dependencies=[Depends(require_allowed_origin)],
+)
 
 
 class FinishRequest(BaseModel):

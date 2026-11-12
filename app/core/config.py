@@ -78,6 +78,7 @@ class Settings(BaseSettings):
             if (
                 parsed.scheme != "https"
                 or not host
+                or "*" in host
                 or parsed.username
                 or parsed.password
                 or parsed.path != ""

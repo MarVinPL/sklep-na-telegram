@@ -4,13 +4,17 @@ build-backend = "hatchling.build"
 
 [project]
 name = "sklep-na-telegram"
-version = "0.1.0"
+version = "0.2.0"
 description = "Multi-tenant Telegram-first commerce platform"
 requires-python = ">=3.12"
 dependencies = [
   "fastapi>=0.115,<1.0",
   "uvicorn[standard]>=0.30,<1.0",
   "pydantic-settings>=2.5,<3.0",
+  "SQLAlchemy>=2.0,<3.0",
+  "psycopg[binary]>=3.2,<4.0",
+  "alembic>=1.14,<2.0",
+  "webauthn>=3.0.1,<4.0",
 ]
 
 [project.optional-dependencies]

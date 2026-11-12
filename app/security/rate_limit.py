@@ -58,21 +58,21 @@ def _consume_bucket(
 
 
 def consume_ip_rate_limit(
-    db: Session, *, client_ip: str, route: str, now: datetime | None = None
+    db: Session, *, client_ip: str, now: datetime | None = None
 ) -> tuple[int, int]:
     settings = get_settings()
-    key = hashlib.sha256(f"ip\0{client_ip}\0{route}".encode()).hexdigest()
+    key = hashlib.sha256(f"ip\0{client_ip}".encode()).hexdigest()
     return _consume_bucket(
         db, bucket_key=key, window_seconds=settings.auth_rate_limit_window_seconds, now=now
     )
 
 
 def consume_account_rate_limit(
-    db: Session, *, telegram_user_id: str, route: str, now: datetime | None = None
+    db: Session, *, telegram_user_id: str, now: datetime | None = None
 ) -> tuple[int, int]:
     settings = get_settings()
     # HMAC prevents a database reader from reversing Telegram numeric IDs by enumeration.
-    material = f"account\0{telegram_user_id}\0{route}".encode()
+    material = f"account\0{telegram_user_id}".encode()
     key = hmac.new(settings.telegram_bot_token.encode(), material, hashlib.sha256).hexdigest()
     return _consume_bucket(
         db,
@@ -84,9 +84,8 @@ def consume_account_rate_limit(
 
 def enforce_ip_rate_limit(request: Request, db: Session = Depends(get_db)) -> None:
     settings = get_settings()
-    route = request.url.path
     ip_count, ip_retry_after = consume_ip_rate_limit(
-        db, client_ip=_client_ip(request), route=route
+        db, client_ip=_client_ip(request)
     )
     if ip_count > settings.auth_rate_limit_max_requests:
         raise HTTPException(
@@ -108,7 +107,6 @@ def enforce_ip_rate_limit(request: Request, db: Session = Depends(get_db)) -> No
     account_count, account_retry_after = consume_account_rate_limit(
         db,
         telegram_user_id=identity["telegram_user_id"],
-        route=route,
     )
     if account_count > settings.auth_rate_limit_account_max_requests:
         raise HTTPException(

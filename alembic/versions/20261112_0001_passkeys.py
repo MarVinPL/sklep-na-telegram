@@ -17,9 +17,11 @@ def upgrade() -> None:
         "users",
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("telegram_user_id", sa.String(length=32), nullable=False),
+        sa.Column("user_handle", sa.LargeBinary(length=64), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
     )
     op.create_index("ix_users_telegram_user_id", "users", ["telegram_user_id"], unique=True)
+    op.create_index("ix_users_user_handle", "users", ["user_handle"], unique=True)
 
     op.create_table(
         "passkey_credentials",

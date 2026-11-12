@@ -63,7 +63,7 @@ Zgodność trzeba potwierdzić testami na rzeczywistych wersjach Telegram Androi
 - Testy integracyjne i end-to-end w obsługiwanych przeglądarkach oraz na rzeczywistych klientach Telegram.
 - Brak ścieżki logowania PIN-em.
 
-## Status implementacji backendu
+## Status implementacji backendu i Mini App
 
 Gałąź `feat/webauthn-passkey-backend` dodaje backendowy zakres:
 - walidację podpisu i świeżości Telegram `initData`;
@@ -88,6 +88,6 @@ Endpointy:
 
 Każdy etap ceremonii wymaga zweryfikowanego nagłówka `X-Telegram-Init-Data`. Logowanie wymaga zarówno aktualnego kontekstu Telegrama, jak i prawidłowego Passkey. PIN nie jest fallbackiem.
 
-To nadal nie jest kompletna funkcja produkcyjna: nie ma jeszcze frontendowej Mini App wywołującej `navigator.credentials.create/get`, testów kryptograficznych end-to-end z rzeczywistymi authenticatorami, testów Telegram WebView, pełnego procesu odzyskiwania ani przeglądu bezpieczeństwa. Rate limiting musi zostać dodany na warstwie API/gateway przed wystawieniem publicznym. Nie deklarujemy zgodności Telegram Android/iOS/Desktop bez testów na rzeczywistych klientach.
+Frontendowy prototyp Mini App znajduje się w `miniapp/` i wywołuje `navigator.credentials.create/get`, obsługuje sesję oraz listowanie/unieważnianie poświadczeń. Nie potwierdzono jeszcze builda frontendu ani testów end-to-end z rzeczywistymi authenticatorami i klientami Telegram WebView. Brakuje pełnego procesu odzyskiwania i przeglądu bezpieczeństwa. Rate limiting musi zostać dodany na warstwie API/gateway przed wystawieniem publicznym. Nie deklarujemy zgodności Telegram Android/iOS/Desktop bez testów na rzeczywistych klientach.
 
 Lokalnie ustaw `TELEGRAM_BOT_TOKEN`, `WEBAUTHN_RP_ID` i `WEBAUTHN_ORIGIN`. W środowisku produkcyjnym wymagane są HTTPS oraz dokładne dopasowanie RP ID i originu.

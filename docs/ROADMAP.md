@@ -12,7 +12,9 @@
 - [x] Szkielet FastAPI, konfiguracja i health checks.
 - [x] SQLAlchemy, Alembic i podstawowe modele użytkownika/Passkey/sesji.
 - [x] Walidacja Telegram Mini App initData.
-- [ ] Dokończenie i przetestowanie Passkey (WebAuthn) z Mini App — bez fallbacku PIN.
+- [x] Backend Passkey (WebAuthn): rejestracja, logowanie, challenge, sesje i unieważnianie.
+- [x] Pierwszy klient Mini App: rejestracja/logowanie Passkey i zarządzanie poświadczeniami.
+- [ ] Testy na rzeczywistych klientach Telegram i authenticatorach, recovery, handoff i przegląd bezpieczeństwa (Issue #7).
 - [ ] RBAC i testy izolacji między sklepami.
 
 ## Etap 3 — bot i Mini App

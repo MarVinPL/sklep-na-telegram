@@ -1,14 +1,32 @@
+from collections.abc import Generator
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
 from fastapi import Response
 from pydantic import ValidationError
-from sqlalchemy import select
+from sqlalchemy import create_engine, select
+from sqlalchemy.orm import Session
+from sqlalchemy.pool import StaticPool
 
 from app.core.config import Settings
+from app.db import Base
 from app.models import AuthSession, User
 from app.routers import passkeys
+
+
+@pytest.fixture
+def db() -> Generator[Session, None, None]:
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        yield session
+    Base.metadata.drop_all(engine)
+    engine.dispose()
 
 
 def production_settings(**overrides: str) -> dict[str, str]:
@@ -47,7 +65,7 @@ def test_production_configuration_rejects_unsafe_values(overrides: dict[str, str
 
 
 def test_successful_login_rotates_previous_active_session(
-    db, monkeypatch: pytest.MonkeyPatch
+    db: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
         passkeys,

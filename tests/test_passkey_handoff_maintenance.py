@@ -58,11 +58,11 @@ def test_cleanup_removes_only_records_past_retention(
     db.add(user)
     db.flush()
 
-    consumed_old = add_handoff(
+    add_handoff(
         db, user, token="a", expires_at=now - timedelta(days=2),
         consumed_at=now - timedelta(days=2),
     )
-    expired_old = add_handoff(
+    add_handoff(
         db, user, token="b", expires_at=now - timedelta(days=2)
     )
     consumed_recent = add_handoff(

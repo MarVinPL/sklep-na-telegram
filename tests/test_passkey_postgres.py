@@ -1,9 +1,9 @@
 import hashlib
 import os
 from concurrent.futures import ThreadPoolExecutor
-from types import SimpleNamespace
 from datetime import UTC, datetime, timedelta
 from threading import Barrier
+from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException

@@ -2,7 +2,7 @@ import hashlib
 import json
 import secrets
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
@@ -19,8 +19,8 @@ from webauthn.helpers import base64url_to_bytes, bytes_to_base64url
 from webauthn.helpers.structs import (
     AuthenticatorSelectionCriteria,
     ResidentKeyRequirement,
-    UserVerificationRequirement,
     PublicKeyCredentialDescriptor,
+    UserVerificationRequirement,
 )
 
 from app.core.config import get_settings
@@ -68,13 +68,15 @@ def _new_challenge(db: Session, user: User, purpose: str, challenge: bytes, init
         purpose=purpose,
         challenge=challenge,
         context_hash=hashlib.sha256(init_data.encode()).hexdigest(),
-        expires_at=datetime.now(timezone.utc) + timedelta(seconds=settings.webauthn_challenge_ttl),
+        expires_at=datetime.now(UTC) + timedelta(seconds=settings.webauthn_challenge_ttl),
     ))
     db.commit()
     return challenge_id
 
 
-def _consume_challenge(db: Session, challenge_id: str, user_id: int, purpose: str, init_data: str) -> bytes:
+def _consume_challenge(
+    db: Session, challenge_id: str, user_id: int, purpose: str, init_data: str
+) -> bytes:
     now = datetime.now(timezone.utc)
     row = db.scalar(
         select(WebAuthnChallenge)
@@ -168,7 +170,7 @@ def registration_verify(
             expected_origin=settings.webauthn_origin,
             require_user_verification=True,
         )
-    except Exception:
+    except Exception:  # noqa: BLE001 - normalize all verifier failures into an HTTP response
         raise HTTPException(status_code=400, detail="Passkey registration verification failed") from None
 
     credential_id = bytes_to_base64url(verified.credential_id)
@@ -243,7 +245,7 @@ def authentication_verify(
             credential_current_sign_count=credential.sign_count,
             require_user_verification=True,
         )
-    except Exception:
+    except Exception:  # noqa: BLE001 - normalize all verifier failures into an HTTP response
         raise HTTPException(status_code=401, detail="Passkey authentication failed") from None
     credential.sign_count = verified.new_sign_count
     credential.device_type = str(verified.credential_device_type)
@@ -280,7 +282,13 @@ def logout(
         if session and session.revoked_at is None:
             session.revoked_at = datetime.now(timezone.utc)
             db.commit()
-    response.delete_cookie(settings.auth_cookie_name, path="/", httponly=True, secure=settings.app_env != "development", samesite="lax")
+    response.delete_cookie(
+        settings.auth_cookie_name,
+        path="/",
+        httponly=True,
+        secure=settings.app_env != "development",
+        samesite="lax",
+    )
     return {"logged_out": True}
 
 
@@ -308,7 +316,10 @@ def revoke_passkey(
         PasskeyCredential.revoked_at.is_(None),
     )).all()
     if len(active_credentials) <= 1:
-        raise HTTPException(status_code=409, detail="Register another Passkey before revoking the last one")
+        raise HTTPException(
+            status_code=409,
+            detail="Register another Passkey before revoking the last one",
+        )
     credential.revoked_at = datetime.now(timezone.utc)
     db.commit()
     return {"revoked": True}

@@ -14,6 +14,7 @@ from app.core.config import Settings
 from app.db import Base
 from app.models import AuthSession, User
 from app.routers import passkeys
+from app.security.origins import require_allowed_origin
 from app.security.sessions import require_session
 
 
@@ -43,13 +44,18 @@ def production_settings(**overrides: str) -> dict[str, str]:
     return values
 
 
-def make_request(raw_token: str) -> Request:
+def make_request(raw_token: str = "", method: str = "GET", origin: str | None = None) -> Request:
+    headers = []
+    if raw_token:
+        headers.append((b"cookie", f"shop_session={raw_token}".encode()))
+    if origin is not None:
+        headers.append((b"origin", origin.encode()))
     return Request(
         {
             "type": "http",
-            "method": "GET",
+            "method": method,
             "path": "/",
-            "headers": [(b"cookie", f"shop_session={raw_token}".encode())],
+            "headers": headers,
             "query_string": b"",
             "server": ("testserver", 443),
             "client": ("127.0.0.1", 12345),
@@ -203,3 +209,39 @@ def test_logout_revokes_server_session_and_clears_cookie(
     assert result == {"logged_out": True}
     assert session.revoked_at is not None
     assert "max-age=0" in response.headers["set-cookie"].lower()
+
+
+
+def test_allowed_origin_accepts_configured_origin_on_post(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.security.origins.get_settings",
+        lambda: SimpleNamespace(allowed_origins=["https://shop.example.com"]),
+    )
+    assert require_allowed_origin(
+        make_request(method="POST", origin="https://shop.example.com")
+    ) is None
+
+
+@pytest.mark.parametrize("origin", [None, "https://attacker.example.net", "null"])
+def test_allowed_origin_rejects_missing_or_untrusted_origin(
+    monkeypatch: pytest.MonkeyPatch, origin: str | None
+) -> None:
+    monkeypatch.setattr(
+        "app.security.origins.get_settings",
+        lambda: SimpleNamespace(allowed_origins=["https://shop.example.com"]),
+    )
+    with pytest.raises(HTTPException) as error:
+        require_allowed_origin(make_request(method="POST", origin=origin))
+    assert error.value.status_code == 403
+
+
+def test_safe_read_method_does_not_require_origin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.security.origins.get_settings",
+        lambda: SimpleNamespace(allowed_origins=["https://shop.example.com"]),
+    )
+    assert require_allowed_origin(make_request(method="GET")) is None

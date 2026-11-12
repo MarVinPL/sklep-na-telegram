@@ -85,9 +85,13 @@ Lokalnie przykładowy `.env.example` dopuszcza `http://localhost:5173` (Vite) i 
 
 ### Rate limiting
 
-Wszystkie endpointy routera Passkey mają wspólny limit per adres IP i ścieżka endpointu. Domyślnie jest to 10 żądań na 60 sekund; limit i okno można zmienić przez `AUTH_RATE_LIMIT_MAX_REQUESTS` oraz `AUTH_RATE_LIMIT_WINDOW_SECONDS`. Liczniki są przechowywane w PostgreSQL (SQLite wyłącznie do testów/lokalnego developmentu) i aktualizowane atomowym upsertem, więc są współdzielone między workerami. Odpowiedź po przekroczeniu limitu to HTTP 429 z nagłówkiem `Retry-After`.
+Wszystkie endpointy routera Passkey mają dwa niezależne limity per ścieżka endpointu:
+- per bezpośredni adres IP: domyślnie 10 żądań na 60 sekund (`AUTH_RATE_LIMIT_MAX_REQUESTS`);
+- per zweryfikowane konto Telegram: domyślnie 6 żądań na 60 sekund (`AUTH_RATE_LIMIT_ACCOUNT_MAX_REQUESTS`).
 
-Adres IP pochodzi z połączenia bezpośredniego; nagłówki `X-Forwarded-For` nie są zaufane. W środowisku za reverse proxy należy skonfigurować zaufane proxy i dopiero wtedy rozszerzyć ekstrakcję adresu IP. To jest pierwszy poziom ochrony infrastrukturalnej, nie pełna realizacja limitów per konto. Limity per konto po weryfikacji Telegram initData, limity recovery i audyt retencji pozostają otwarte w Issue #7.
+Okno obu limitów można zmienić przez `AUTH_RATE_LIMIT_WINDOW_SECONDS`. Liczniki są przechowywane w PostgreSQL (SQLite wyłącznie do testów/lokalnego developmentu) i aktualizowane atomowym upsertem, więc są współdzielone między workerami. Konto jest identyfikowane dopiero po poprawnej weryfikacji nagłówka Telegram `initData`; błędne lub brakujące `initData` nadal podlega limitowi IP. Klucz konta jest HMAC z użyciem tokena bota, więc surowy numeryczny Telegram ID nie jest zapisany w tabeli limiterów. Odpowiedź po przekroczeniu limitu to HTTP 429 z nagłówkiem `Retry-After`.
+
+Adres IP pochodzi z połączenia bezpośredniego; nagłówki `X-Forwarded-For` nie są zaufane. W środowisku za reverse proxy należy skonfigurować zaufane proxy i dopiero wtedy rozszerzyć ekstrakcję adresu IP. Limity recovery, test współbieżności limitera na PostgreSQL, sprzątanie wygasłych liczników i audyt retencji pozostają otwarte w Issue #7.
 
 ## Testy akceptacyjne
 

@@ -12,8 +12,8 @@ from sqlalchemy.orm import sessionmaker
 
 from app.db import Base
 from app.models import AuthRateLimit, User, WebAuthnChallenge
-from app.security.rate_limit import consume_ip_rate_limit
 from app.routers.passkeys import _consume_challenge, _get_or_create_user
+from app.security.rate_limit import consume_ip_rate_limit
 
 DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 pytestmark = pytest.mark.skipif(not DATABASE_URL, reason="TEST_DATABASE_URL is not configured")

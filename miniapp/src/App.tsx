@@ -13,11 +13,15 @@ export default function App() {
   const handoffPage = window.location.pathname.endsWith("/handoff.html");
   const [handoffTicket, setHandoffTicket] = useState<string | null>(() => {
     if (!window.location.pathname.endsWith("/handoff.html")) return null;
-    const ticket = new URLSearchParams(window.location.hash.slice(1)).get("ticket");
-    if (ticket) window.history.replaceState(null, "", window.location.pathname);
-    return ticket;
+    return new URLSearchParams(window.location.hash.slice(1)).get("ticket");
   });
   const [handoffComplete, setHandoffComplete] = useState(false);
+
+  useEffect(() => {
+    if (handoffTicket && window.location.hash) {
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+  }, [handoffTicket]);
 
   const telegramAvailable = isTelegramContextAvailable();
   const passkeyAvailable = supportsPasskeys();

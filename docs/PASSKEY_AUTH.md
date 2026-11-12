@@ -63,6 +63,30 @@ Zgodność trzeba potwierdzić testami na rzeczywistych wersjach Telegram Androi
 - Testy integracyjne i end-to-end w obsługiwanych przeglądarkach oraz na rzeczywistych klientach Telegram.
 - Brak ścieżki logowania PIN-em.
 
-## Status
+## Status implementacji backendu
 
-To wymaganie architektoniczne. Implementacja backendu WebAuthn, modelu danych, ekranów Mini App, procesu odzyskiwania i testów urządzeń jest osobnym zadaniem: [Issue #2](https://github.com/MarVinPL/sklep-na-telegram/issues/2).
+Gałąź `feat/webauthn-passkey-backend` dodaje backendowy zakres:
+- walidację podpisu i świeżości Telegram `initData`;
+- generowanie opcji rejestracji i logowania WebAuthn;
+- weryfikację odpowiedzi przez `webauthn` (py_webauthn), z wymaganym user verification;
+- modele użytkownika, poświadczeń, jednorazowych challenge i sesji;
+- challenge powiązany z użytkownikiem, typem operacji i skrótem dokładnego `initData`;
+- sesje z losowym tokenem HttpOnly cookie, przechowywanym w DB wyłącznie jako hash;
+- wylogowanie i unieważnianie sesji;
+- unieważnianie Passkey po zalogowaniu, jeśli użytkownik ma jeszcze co najmniej jedno aktywne poświadczenie;
+- migrację Alembic i lokalną konfigurację Compose.
+
+Endpointy:
+- `POST /auth/passkeys/registration/options`
+- `POST /auth/passkeys/registration/verify`
+- `POST /auth/passkeys/authentication/options`
+- `POST /auth/passkeys/authentication/verify`
+- `GET /auth/passkeys/session`
+- `POST /auth/passkeys/logout`
+- `POST /auth/passkeys/{credential_id}/revoke`
+
+Każdy etap ceremonii wymaga zweryfikowanego nagłówka `X-Telegram-Init-Data`. Logowanie wymaga zarówno aktualnego kontekstu Telegrama, jak i prawidłowego Passkey. PIN nie jest fallbackiem.
+
+To nadal nie jest kompletna funkcja produkcyjna: nie ma jeszcze frontendowej Mini App wywołującej `navigator.credentials.create/get`, testów kryptograficznych end-to-end z rzeczywistymi authenticatorami, testów Telegram WebView, pełnego procesu odzyskiwania ani przeglądu bezpieczeństwa. Rate limiting musi zostać dodany na warstwie API/gateway przed wystawieniem publicznym. Nie deklarujemy zgodności Telegram Android/iOS/Desktop bez testów na rzeczywistych klientach.
+
+Lokalnie ustaw `TELEGRAM_BOT_TOKEN`, `WEBAUTHN_RP_ID` i `WEBAUTHN_ORIGIN`. W środowisku produkcyjnym wymagane są HTTPS oraz dokładne dopasowanie RP ID i originu.

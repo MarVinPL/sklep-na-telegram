@@ -93,6 +93,19 @@ Okno obu limitów można zmienić przez `AUTH_RATE_LIMIT_WINDOW_SECONDS`. Liczni
 
 Adres IP pochodzi z połączenia bezpośredniego; nagłówki `X-Forwarded-For` nie są zaufane. W środowisku za reverse proxy należy skonfigurować zaufane proxy i dopiero wtedy rozszerzyć ekstrakcję adresu IP. Limity recovery, test współbieżności limitera na PostgreSQL, sprzątanie wygasłych liczników i audyt retencji pozostają otwarte w Issue #7.
 
+### Handoff do zewnętrznej przeglądarki i ochrona przed enumeracją
+
+Backend udostępnia bazowe endpointy handoff:
+- `POST /auth/passkeys/handoff` — weryfikuje Telegram `initData`, wydaje losowy token handoff (32 bajty entropii) i zwraca go Mini App. W bazie zapisywany jest wyłącznie SHA-256 tokenu.
+- `POST /auth/passkeys/handoff/authentication/options` — atomowo zużywa token, wiąże challenge WebAuthn z użytkownikiem i zwraca opcje logowania.
+- `POST /auth/passkeys/handoff/authentication/verify` — atomowo zużywa challenge, weryfikuje Passkey i dopiero wtedy tworzy sesję aplikacyjną.
+
+Token jest jednorazowy, domyślnie ważny 120 sekund (konfiguracja `PASSKEY_HANDOFF_TTL_SECONDS`, dozwolony zakres 30–300 sekund). Tokenu nie należy umieszczać w query string ani logach. Klient powinien przekazywać go w fragmencie URL (`#ticket=...`), odczytać po stronie przeglądarki i wysłać do endpointu options w treści POST. Fragment nie jest wysyłany w żądaniu HTTP do serwera. Nie przekazywać `initData` do zewnętrznej przeglądarki. Endpointy nie tworzą sesji przed poprawnym WebAuthn.
+
+Endpointy zwykłego logowania i handoff nie zwracają listy `allowCredentials`. Wymuszana jest rejestracja discoverable credential (`residentKey=required`), dzięki czemu liczba i obecność zapisanych poświadczeń nie są ujawniane w odpowiedzi options. Weryfikacja nadal wiąże credential z użytkownikiem wynikającym z Telegrama albo z jednorazowego handoff. Wcześniej zarejestrowane poświadczenia, które nie są discoverable, mogą wymagać ponownej rejestracji; nie należy uznawać migracji istniejących kont za zweryfikowaną bez testu urządzenia.
+
+**Zakres niedokończony:** Mini App nie ma jeszcze ekranu/route odbierającego fragment URL, otwierania przeglądarki zewnętrznej ani end-to-end testu na Telegram Android/iOS/Desktop. Ta zmiana backendu nie oznacza, że handoff jest gotowy do testów użytkownika lub produkcji.
+
 ## Testy akceptacyjne
 
 - Rejestracja i logowanie prawidłowym Passkey.

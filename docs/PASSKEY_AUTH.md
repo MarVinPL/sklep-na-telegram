@@ -85,7 +85,7 @@ Lokalnie przykładowy `.env.example` dopuszcza `http://localhost:5173` (Vite) i 
 
 ### Rate limiting
 
-Wszystkie endpointy routera Passkey mają dwa niezależne limity per konto:
+Wszystkie endpointy routera Passkey mają dwa niezależne limity:
 - per bezpośredni adres IP: domyślnie 10 żądań na 60 sekund (`AUTH_RATE_LIMIT_MAX_REQUESTS`);
 - per zweryfikowane konto Telegram: domyślnie 6 żądań na 60 sekund (`AUTH_RATE_LIMIT_ACCOUNT_MAX_REQUESTS`).
 

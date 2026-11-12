@@ -47,7 +47,7 @@ def _get_or_create_user(db: Session, telegram_user_id: str) -> User:
     return user
 
 
-def _new_challenge(db: Session, user: User, purpose: str, challenge: bytes) -> str:
+def _new_challenge(db: Session, user: User, purpose: str, challenge: bytes, init_data: str) -> str:
     settings = get_settings()
     challenge_id = str(uuid.uuid4())
     db.add(WebAuthnChallenge(
@@ -61,7 +61,7 @@ def _new_challenge(db: Session, user: User, purpose: str, challenge: bytes) -> s
     return challenge_id
 
 
-def _consume_challenge(db: Session, challenge_id: str, user_id: int, purpose: str) -> bytes:
+def _consume_challenge(db: Session, challenge_id: str, user_id: int, purpose: str, init_data: str) -> bytes:
     now = datetime.now(timezone.utc)
     row = db.scalar(
         select(WebAuthnChallenge)
@@ -128,7 +128,7 @@ def registration_options(
             user_verification=UserVerificationRequirement.REQUIRED,
         ),
     )
-    challenge_id = _new_challenge(db, user, "registration", options.challenge)
+    challenge_id = _new_challenge(db, user, "registration", options.challenge, x_telegram_init_data)
     return {"challenge_id": challenge_id, "publicKey": json.loads(options_to_json(options))}
 
 
@@ -140,7 +140,7 @@ def registration_verify(
 ) -> dict:
     identity = verify_telegram_init_data(x_telegram_init_data)
     user = _get_or_create_user(db, identity["telegram_user_id"])
-    challenge = _consume_challenge(db, payload.challenge_id, user.id, "registration")
+    challenge = _consume_challenge(db, payload.challenge_id, user.id, "registration", x_telegram_init_data)
     settings = get_settings()
     try:
         verified = verify_registration_response(
@@ -192,7 +192,7 @@ def authentication_options(
         ],
         user_verification=UserVerificationRequirement.REQUIRED,
     )
-    challenge_id = _new_challenge(db, user, "authentication", options.challenge)
+    challenge_id = _new_challenge(db, user, "authentication", options.challenge, x_telegram_init_data)
     return {"challenge_id": challenge_id, "publicKey": json.loads(options_to_json(options))}
 
 
@@ -205,7 +205,7 @@ def authentication_verify(
 ) -> dict:
     identity = verify_telegram_init_data(x_telegram_init_data)
     user = _get_or_create_user(db, identity["telegram_user_id"])
-    challenge = _consume_challenge(db, payload.challenge_id, user.id, "authentication")
+    challenge = _consume_challenge(db, payload.challenge_id, user.id, "authentication", x_telegram_init_data)
     credential_id = payload.credential.get("id")
     credential = db.scalar(select(PasskeyCredential).where(
         PasskeyCredential.credential_id == credential_id,
@@ -264,3 +264,37 @@ def logout(
             db.commit()
     response.delete_cookie(settings.auth_cookie_name, path="/", httponly=True, secure=settings.app_env == "production", samesite="lax")
     return {"logged_out": True}
+
+
+@router.post("/{credential_id}/revoke")
+def revoke_passkey(
+    credential_id: str,
+    request: Request,
+    x_telegram_init_data: str = Header(..., alias="X-Telegram-Init-Data"),
+    db: Session = Depends(get_db),
+) -> dict:
+    identity = verify_telegram_init_data(x_telegram_init_data)
+    session = require_session(request, db)
+    user = db.get(User, session.user_id)
+    if user is None or user.telegram_user_id != identity["telegram_user_id"]:
+        raise HTTPException(status_code=401, detail="Session identity mismatch")
+    credential = db.scalar(select(PasskeyCredential).where(
+        PasskeyCredential.credential_id == credential_id,
+        PasskeyCredential.user_id == user.id,
+        PasskeyCredential.revoked_at.is_(None),
+    ))
+    if credential is None:
+        raise HTTPException(status_code=404, detail="Active Passkey not found")
+    active_count = db.scalar(select(PasskeyCredential.id).where(
+        PasskeyCredential.user_id == user.id,
+        PasskeyCredential.revoked_at.is_(None),
+    ).limit(2))
+    active_credentials = db.scalars(select(PasskeyCredential).where(
+        PasskeyCredential.user_id == user.id,
+        PasskeyCredential.revoked_at.is_(None),
+    )).all()
+    if len(active_credentials) <= 1:
+        raise HTTPException(status_code=409, detail="Register another Passkey before revoking the last one")
+    credential.revoked_at = datetime.now(timezone.utc)
+    db.commit()
+    return {"revoked": True}

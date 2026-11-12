@@ -1,3 +1,4 @@
+import ipaddress
 from functools import lru_cache
 from urllib.parse import urlsplit
 
@@ -43,6 +44,12 @@ class Settings(BaseSettings):
         rp_id = self.webauthn_rp_id.strip().lower().rstrip(".")
         if not rp_id or rp_id == "localhost" or rp_id.endswith(".localhost"):
             raise ValueError("WEBAUTHN_RP_ID must be a public domain in production")
+        try:
+            ipaddress.ip_address(rp_id)
+        except ValueError:
+            pass
+        else:
+            raise ValueError("WEBAUTHN_RP_ID must be a domain name, not an IP address")
 
         origin = urlsplit(self.webauthn_origin)
         origin_host = (origin.hostname or "").lower().rstrip(".")

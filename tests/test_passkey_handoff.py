@@ -50,7 +50,7 @@ def test_handoff_token_is_hashed_and_can_be_consumed_only_once(
     assert stored.token_hash != raw_token
     assert len(stored.token_hash) == 64
     assert passkeys.hashlib.sha256(raw_token.encode()).hexdigest() == stored.token_hash
-    assert stored.expires_at > datetime.now(UTC)
+    assert stored.expires_at.replace(tzinfo=UTC) > datetime.now(UTC)
 
     assert passkeys._consume_handoff(db, raw_token) == user.id
     with pytest.raises(HTTPException) as replay:
@@ -119,7 +119,7 @@ def test_authentication_options_do_not_disclose_credential_presence_or_count(
         "verify_telegram_init_data",
         lambda raw: {"telegram_user_id": raw},
     )
-    owner_without_passkey = make_user(db, "without-passkey")
+    make_user(db, "without-passkey")
     owner_with_passkey = make_user(db, "with-passkey")
     db.add(PasskeyCredential(
         user_id=owner_with_passkey.id,

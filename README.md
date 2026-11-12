@@ -2,7 +2,7 @@
 
 Uniwersalna, otwartoźródłowa platforma sklepowa działająca w Telegramie. Jeden backend obsługuje wiele niezależnych sklepów (multi-tenant), a klienci i administratorzy korzystają z bota Telegram oraz Telegram Mini App.
 
-> **Status: wczesny development.** Dostępne są dokumentacja, lokalny PostgreSQL i minimalne API FastAPI z endpointem health check. To nie jest jeszcze gotowy system sprzedażowy ani wdrożenie produkcyjne.
+> **Status: wczesny development.** Dostępne są fundamenty, API FastAPI, PostgreSQL i backendowe endpointy Passkey (WebAuthn). Nie ma jeszcze Mini App, bota, katalogu, koszyka ani procesu płatności. To nie jest wdrożenie produkcyjne.
 
 ## Założenia
 

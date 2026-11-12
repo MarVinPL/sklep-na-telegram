@@ -16,7 +16,13 @@ jobs:
           cache: pip
       - name: Install project and test dependencies
         run: pip install ".[dev]"
+      - name: Compile Python sources
+        run: python -m compileall -q app tests alembic
+      - name: Validate database migration
+        env:
+          DATABASE_URL: sqlite:///./ci.db
+        run: alembic upgrade head
       - name: Run tests
         run: pytest
-      - name: Check formatting and lint
+      - name: Check lint
         run: ruff check .

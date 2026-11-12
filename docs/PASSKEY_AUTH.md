@@ -138,6 +138,9 @@ Endpointy:
 - `POST /auth/passkeys/registration/verify`
 - `POST /auth/passkeys/authentication/options`
 - `POST /auth/passkeys/authentication/verify`
+- `POST /auth/passkeys/handoff` (wydanie jednorazowego biletu z Telegram initData)
+- `POST /auth/passkeys/handoff/authentication/options` (atomowe zużycie biletu i rozpoczęcie WebAuthn)
+- `POST /auth/passkeys/handoff/authentication/verify` (weryfikacja Passkey i utworzenie sesji)
 - `GET /auth/passkeys` (lista aktywnych poświadczeń)
 - `GET /auth/passkeys/session`
 - `POST /auth/passkeys/logout`

@@ -32,10 +32,21 @@ from app.security.rate_limit import enforce_ip_rate_limit
 from app.security.sessions import require_session
 from app.security.telegram import verify_telegram_init_data
 
+
+def _prevent_cache(response: Response) -> None:
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, private"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+
+
 router = APIRouter(
     prefix="/auth/passkeys",
     tags=["passkeys"],
-    dependencies=[Depends(require_allowed_origin), Depends(enforce_ip_rate_limit)],
+    dependencies=[
+        Depends(_prevent_cache),
+        Depends(require_allowed_origin),
+        Depends(enforce_ip_rate_limit),
+    ],
 )
 
 

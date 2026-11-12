@@ -95,6 +95,8 @@ Adres IP pochodzi z połączenia bezpośredniego; nagłówki `X-Forwarded-For` n
 
 ### Handoff do zewnętrznej przeglądarki i ochrona przed enumeracją
 
+Wszystkie odpowiedzi routera Passkey otrzymują nagłówki `Cache-Control: no-store, no-cache, must-revalidate, private`, `Pragma: no-cache` i `Expires: 0`. Obejmuje to opcje WebAuthn, odpowiedzi handoff, status sesji oraz operacje zarządzania Passkeys; przeglądarki i pośrednie cache nie powinny przechowywać tych odpowiedzi.
+
 Backend udostępnia bazowe endpointy handoff:
 - `POST /auth/passkeys/handoff` — weryfikuje Telegram `initData`, wydaje losowy token handoff (32 bajty entropii) i zwraca go Mini App. W bazie zapisywany jest wyłącznie SHA-256 tokenu.
 - `POST /auth/passkeys/handoff/authentication/options` — atomowo zużywa token, wiąże challenge WebAuthn z użytkownikiem i zwraca opcje logowania.

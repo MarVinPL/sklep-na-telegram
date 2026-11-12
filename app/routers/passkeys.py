@@ -6,7 +6,8 @@ from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from webauthn import (
     generate_authentication_options,
@@ -40,11 +41,21 @@ class FinishRequest(BaseModel):
 
 def _get_or_create_user(db: Session, telegram_user_id: str) -> User:
     user = db.scalar(select(User).where(User.telegram_user_id == telegram_user_id))
-    if user is None:
-        user = User(telegram_user_id=telegram_user_id)
-        db.add(user)
+    if user is not None:
+        return user
+
+    user = User(telegram_user_id=telegram_user_id)
+    db.add(user)
+    try:
         db.flush()
-    return user
+        return user
+    except IntegrityError:
+        # Another request may have inserted the same Telegram identity after our SELECT.
+        db.rollback()
+        user = db.scalar(select(User).where(User.telegram_user_id == telegram_user_id))
+        if user is None:
+            raise
+        return user
 
 
 def _require_existing_passkey_session(request: Request, db: Session, user: User) -> None:
@@ -99,8 +110,21 @@ def _consume_challenge(
 
 def _session_cookie(db: Session, user: User, response: Response) -> None:
     settings = get_settings()
+    now = datetime.now(UTC)
     raw_token = secrets.token_urlsafe(32)
-    expires = datetime.now(UTC) + timedelta(seconds=settings.auth_session_ttl)
+
+    # This application currently enforces one active browser session per user.
+    # Revoke prior sessions in the same transaction as issuing the replacement.
+    db.execute(
+        update(AuthSession)
+        .where(
+            AuthSession.user_id == user.id,
+            AuthSession.revoked_at.is_(None),
+        )
+        .values(revoked_at=now)
+        .execution_options(synchronize_session=False)
+    )
+    expires = now + timedelta(seconds=settings.auth_session_ttl)
     db.add(AuthSession(
         user_id=user.id,
         token_hash=hashlib.sha256(raw_token.encode()).hexdigest(),

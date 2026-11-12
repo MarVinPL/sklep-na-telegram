@@ -136,7 +136,7 @@ def test_postgres_rate_limit_upsert_is_atomic_under_concurrency(
         rows = session.scalars(
             select(AuthRateLimit).where(
                 AuthRateLimit.bucket_key
-                == hashlib.sha256(b"ip\\0" + b"198.51.100.42").hexdigest()
+                == hashlib.sha256(b"ip\0" + b"198.51.100.42").hexdigest()
             )
         ).all()
         assert len(rows) == 1

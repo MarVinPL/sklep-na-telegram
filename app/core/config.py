@@ -22,9 +22,15 @@ class Settings(BaseSettings):
     webauthn_rp_id: str = "localhost"
     webauthn_rp_name: str = "Sklep na Telegram"
     webauthn_origin: str = "http://localhost:8000"
+    cors_allowed_origins: str = ""
     webauthn_challenge_ttl: int = 180
     auth_session_ttl: int = 86400
     auth_cookie_name: str = "shop_session"
+
+    @property
+    def allowed_origins(self) -> list[str]:
+        configured = [item.strip() for item in self.cors_allowed_origins.split(",") if item.strip()]
+        return configured or [self.webauthn_origin]
 
     @model_validator(mode="after")
     def validate_production_security(self) -> "Settings":
@@ -65,6 +71,22 @@ class Settings(BaseSettings):
             raise ValueError("WEBAUTHN_ORIGIN must be an exact HTTPS origin in production")
         if origin_host != rp_id and not origin_host.endswith(f".{rp_id}"):
             raise ValueError("WEBAUTHN_ORIGIN host must match WEBAUTHN_RP_ID")
+
+        for allowed_origin in self.allowed_origins:
+            parsed = urlsplit(allowed_origin)
+            host = (parsed.hostname or "").lower().rstrip(".")
+            if (
+                parsed.scheme != "https"
+                or not host
+                or parsed.username
+                or parsed.password
+                or parsed.path not in ("", "/")
+                or parsed.query
+                or parsed.fragment
+            ):
+                raise ValueError("CORS_ALLOWED_ORIGINS must contain exact HTTPS origins")
+            if host != rp_id and not host.endswith(f".{rp_id}"):
+                raise ValueError("Each CORS origin host must match WEBAUTHN_RP_ID")
 
         return self
 

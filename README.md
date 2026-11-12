@@ -27,7 +27,7 @@ Uniwersalna, otwartoźródłowa platforma sklepowa działająca w Telegramie. Je
 2. Uzupełnij lokalne wartości konfiguracyjne.
 3. Uruchom `docker compose up -d`.
 
-Compose na tym etapie uruchamia wyłącznie bazę PostgreSQL. API, bot i Mini App zostaną dodane w kolejnych etapach; nie należy traktować tego kroku jako uruchomienia sklepu.
+Docker Compose uruchamia lokalnie PostgreSQL i API; migracje Alembic wykonują się przy starcie kontenera API. Ustaw prawdziwy lokalny `TELEGRAM_BOT_TOKEN` oraz dokładne `WEBAUTHN_RP_ID` i `WEBAUTHN_ORIGIN`, zanim przetestujesz endpointy Passkey. Domyślne wartości RP/origin służą wyłącznie lokalnemu developmentowi. Bot i Mini App nie są jeszcze zaimplementowane, więc sam backend nie jest gotowym sklepem.
 
 ## Dokumentacja
 

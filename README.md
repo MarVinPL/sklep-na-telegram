@@ -2,7 +2,7 @@
 
 Uniwersalna, otwartoźródłowa platforma sklepowa działająca w Telegramie. Jeden backend obsługuje wiele niezależnych sklepów (multi-tenant), a klienci i administratorzy korzystają z bota Telegram oraz Telegram Mini App.
 
-> **Status: wczesny development.** Dostępne są fundamenty, API FastAPI, PostgreSQL i backendowe endpointy Passkey (WebAuthn). Nie ma jeszcze Mini App, bota, katalogu, koszyka ani procesu płatności. To nie jest wdrożenie produkcyjne.
+> **Status: wczesny development.** Dostępne są fundamenty, API FastAPI, PostgreSQL, backend Passkey (WebAuthn) i pierwszy frontend Mini App. Nie ma jeszcze bota, katalogu, koszyka ani procesu płatności. To nie jest wdrożenie produkcyjne.
 
 ## Założenia
 
@@ -27,7 +27,11 @@ Uniwersalna, otwartoźródłowa platforma sklepowa działająca w Telegramie. Je
 2. Uzupełnij lokalne wartości konfiguracyjne.
 3. Uruchom `docker compose up -d`.
 
-Docker Compose uruchamia lokalnie PostgreSQL i API; migracje Alembic wykonują się przy starcie kontenera API. Ustaw prawdziwy lokalny `TELEGRAM_BOT_TOKEN` oraz dokładne `WEBAUTHN_RP_ID` i `WEBAUTHN_ORIGIN`, zanim przetestujesz endpointy Passkey. Domyślne wartości RP/origin służą wyłącznie lokalnemu developmentowi. Bot i Mini App nie są jeszcze zaimplementowane, więc sam backend nie jest gotowym sklepem.
+Docker Compose uruchamia lokalnie PostgreSQL i API; migracje Alembic wykonują się przy starcie kontenera API. Ustaw prawdziwy lokalny `TELEGRAM_BOT_TOKEN` oraz dokładne `WEBAUTHN_RP_ID` i `WEBAUTHN_ORIGIN`, zanim przetestujesz endpointy Passkey. Domyślne wartości RP/origin służą wyłącznie lokalnemu developmentowi. Bot, katalog, koszyk i płatności nie są jeszcze zaimplementowane, więc projekt nie jest gotowym sklepem.
+
+## Mini App (development)
+
+Frontend React + TypeScript znajduje się w `miniapp/`. Uruchom backend (`docker compose up -d`), a następnie w drugim terminalu wykonaj `cd miniapp && npm install && npm run dev`. Vite przekazuje ścieżki `/auth` do lokalnego API FastAPI. Do testów WebAuthn potrzebny jest bezpieczny kontekst (HTTPS lub localhost), skonfigurowany `TELEGRAM_BOT_TOKEN` i rzeczywisty kontekst Telegram Mini App.
 
 ## Dokumentacja
 

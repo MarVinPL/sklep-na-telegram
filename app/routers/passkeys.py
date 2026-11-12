@@ -311,6 +311,7 @@ def _consume_handoff(db: Session, raw_token: str, purpose: str = "authentication
             PasskeyHandoff.expires_at > now,
         )
         .values(consumed_at=now)
+        .execution_options(synchronize_session=False)
         .returning(PasskeyHandoff.user_id)
     ).scalar_one_or_none()
     db.commit()
@@ -330,6 +331,7 @@ def _consume_handoff_challenge(db: Session, challenge_id: str) -> tuple[int, byt
             WebAuthnChallenge.expires_at > now,
         )
         .values(consumed_at=now)
+        .execution_options(synchronize_session=False)
         .returning(WebAuthnChallenge.user_id, WebAuthnChallenge.challenge)
     ).one_or_none()
     db.commit()

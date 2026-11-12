@@ -1,13 +1,14 @@
 from fastapi import FastAPI
 
 from app.core.config import get_settings
+from app.routers.passkeys import router as passkeys_router
 
 
 def create_app() -> FastAPI:
     settings = get_settings()
     application = FastAPI(
         title=settings.app_name,
-        version="0.1.0",
+        version="0.2.0",
         docs_url="/docs" if settings.app_env != "production" else None,
         redoc_url=None,
     )
@@ -16,6 +17,7 @@ def create_app() -> FastAPI:
     async def healthcheck() -> dict[str, str]:
         return {"status": "ok"}
 
+    application.include_router(passkeys_router)
     return application
 
 

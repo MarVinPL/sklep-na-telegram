@@ -1,3 +1,4 @@
+import hashlib
 import os
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
@@ -6,7 +7,7 @@ from threading import Barrier
 import pytest
 from fastapi import HTTPException
 from sqlalchemy import create_engine, select
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import sessionmaker
 
 from app.db import Base
 from app.models import User, WebAuthnChallenge
@@ -38,7 +39,7 @@ def test_postgres_allows_only_one_parallel_challenge_consumption(postgres_sessio
             user_id=user.id,
             purpose="authentication",
             challenge=b"one-time-challenge",
-            context_hash=__import__("hashlib").sha256(b"init-data").hexdigest(),
+            context_hash=hashlib.sha256(b"init-data").hexdigest(),
             expires_at=datetime.now(UTC) + timedelta(minutes=2),
         )
         setup.add(challenge)

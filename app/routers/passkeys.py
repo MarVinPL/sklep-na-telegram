@@ -237,11 +237,6 @@ def authentication_options(
 ) -> dict:
     identity = verify_telegram_init_data(x_telegram_init_data)
     user = _get_or_create_user(db, identity["telegram_user_id"])
-    credentials = db.scalars(select(PasskeyCredential).where(
-        PasskeyCredential.user_id == user.id, PasskeyCredential.revoked_at.is_(None)
-    )).all()
-    if not credentials:
-        raise HTTPException(status_code=404, detail="No active Passkey is registered")
     settings = get_settings()
     # Discoverable credentials keep the response independent of account credential count.
     # This avoids exposing whether/how many Passkeys are registered for this Telegram identity.

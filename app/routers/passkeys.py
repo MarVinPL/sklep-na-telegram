@@ -97,7 +97,7 @@ def _session_cookie(db: Session, user: User, response: Response) -> None:
         settings.auth_cookie_name,
         raw_token,
         httponly=True,
-        secure=settings.app_env == "production",
+        secure=settings.app_env != "development",
         samesite="lax",
         max_age=settings.auth_session_ttl,
         path="/",
@@ -296,3 +296,32 @@ def revoke_passkey(
     credential.revoked_at = datetime.now(timezone.utc)
     db.commit()
     return {"revoked": True}
+
+
+@router.get("")
+def list_passkeys(
+    request: Request,
+    x_telegram_init_data: str = Header(..., alias="X-Telegram-Init-Data"),
+    db: Session = Depends(get_db),
+) -> dict:
+    identity = verify_telegram_init_data(x_telegram_init_data)
+    session = require_session(request, db)
+    user = db.get(User, session.user_id)
+    if user is None or user.telegram_user_id != identity["telegram_user_id"]:
+        raise HTTPException(status_code=401, detail="Session identity mismatch")
+    credentials = db.scalars(select(PasskeyCredential).where(
+        PasskeyCredential.user_id == user.id,
+        PasskeyCredential.revoked_at.is_(None),
+    )).all()
+    return {
+        "credentials": [
+            {
+                "credential_id": item.credential_id,
+                "name": item.name,
+                "created_at": item.created_at.isoformat(),
+                "device_type": item.device_type,
+                "backed_up": item.backed_up,
+            }
+            for item in credentials
+        ]
+    }

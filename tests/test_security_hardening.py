@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException, Request, Response
+from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
@@ -267,3 +268,58 @@ def test_allowed_origins_uses_exact_comma_separated_values() -> None:
 def test_allowed_origins_defaults_to_webauthn_origin() -> None:
     settings = Settings(_env_file=None, **production_settings())
     assert settings.allowed_origins == ["https://shop.example.com"]
+
+
+
+def test_cors_preflight_allows_only_configured_origin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = SimpleNamespace(
+        app_name="test",
+        app_env="production",
+        allowed_origins=["https://shop.example.com"],
+    )
+    monkeypatch.setattr("app.main.get_settings", lambda: settings)
+    from app.main import create_app
+
+    client = TestClient(create_app())
+    allowed = client.options(
+        "/auth/passkeys/logout",
+        headers={
+            "Origin": "https://shop.example.com",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "content-type",
+        },
+    )
+    denied = client.options(
+        "/auth/passkeys/logout",
+        headers={
+            "Origin": "https://attacker.example.net",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "content-type",
+        },
+    )
+
+    assert allowed.status_code == 200
+    assert allowed.headers["access-control-allow-origin"] == "https://shop.example.com"
+    assert allowed.headers["access-control-allow-credentials"] == "true"
+    assert denied.status_code == 400
+
+
+def test_passkey_post_rejects_untrusted_origin_before_auth_logic(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = SimpleNamespace(
+        app_name="test",
+        app_env="production",
+        allowed_origins=["https://shop.example.com"],
+    )
+    monkeypatch.setattr("app.main.get_settings", lambda: settings)
+    monkeypatch.setattr("app.security.origins.get_settings", lambda: settings)
+    from app.main import create_app
+
+    response = TestClient(create_app()).post(
+        "/auth/passkeys/logout",
+        headers={"Origin": "https://attacker.example.net"},
+    )
+    assert response.status_code == 403

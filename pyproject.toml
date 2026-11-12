@@ -32,5 +32,5 @@ target-version = "py312"
 [tool.hatch.build.targets.wheel]
 packages = ["app"]
 
-[tool.ruff.lint]
+[tool.ruff.lint.flake8-bugbear]
 extend-immutable-calls = ["fastapi.Depends", "fastapi.Header"]

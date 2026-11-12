@@ -85,10 +85,7 @@ def consume_account_rate_limit(
 def enforce_ip_rate_limit(request: Request, db: Session = Depends(get_db)) -> None:
     settings = get_settings()
     route = request.url.path
-    _, ip_retry_after = consume_ip_rate_limit(
-        db, client_ip=_client_ip(request), route=route
-    )
-    ip_count, _ = consume_ip_rate_limit(
+    ip_count, ip_retry_after = consume_ip_rate_limit(
         db, client_ip=_client_ip(request), route=route
     )
     if ip_count > settings.auth_rate_limit_max_requests:

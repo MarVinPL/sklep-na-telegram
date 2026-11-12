@@ -269,6 +269,9 @@ export default function App() {
                 <button className="button primary" disabled={busy} onClick={() => void login()}>
                   Zaloguj przez Passkey
                 </button>
+                <button className="button secondary" disabled={busy} onClick={() => void openExternalBrowser()}>
+                  Otwórz w zewnętrznej przeglądarce
+                </button>
                 <button className="button secondary" disabled={busy} onClick={() => void registerPasskey()}>
                   Zarejestruj pierwszy Passkey
                 </button>

@@ -64,7 +64,7 @@ class Settings(BaseSettings):
             or not origin_host
             or origin.username
             or origin.password
-            or origin.path not in ("", "/")
+            or origin.path != ""
             or origin.query
             or origin.fragment
         ):
@@ -80,7 +80,7 @@ class Settings(BaseSettings):
                 or not host
                 or parsed.username
                 or parsed.password
-                or parsed.path not in ("", "/")
+                or parsed.path != ""
                 or parsed.query
                 or parsed.fragment
             ):

@@ -91,7 +91,7 @@ Wszystkie endpointy routera Passkey mają dwa niezależne limity:
 
 Okno obu limitów można zmienić przez `AUTH_RATE_LIMIT_WINDOW_SECONDS`. Liczniki są przechowywane w PostgreSQL (SQLite wyłącznie do testów/lokalnego developmentu) i aktualizowane atomowym upsertem, więc są współdzielone między workerami. Konto jest identyfikowane dopiero po poprawnej weryfikacji nagłówka Telegram `initData`; błędne lub brakujące `initData` nadal podlega limitowi IP. Klucz konta jest HMAC z użyciem tokena bota, więc surowy numeryczny Telegram ID nie jest zapisany w tabeli limiterów. Odpowiedź po przekroczeniu limitu to HTTP 429 z nagłówkiem `Retry-After`.
 
-Adres IP pochodzi z połączenia bezpośredniego; nagłówki `X-Forwarded-For` nie są zaufane. W środowisku za reverse proxy należy skonfigurować zaufane proxy i dopiero wtedy rozszerzyć ekstrakcję adresu IP. Limity recovery, test współbieżności limitera na PostgreSQL, sprzątanie wygasłych liczników i audyt retencji pozostają otwarte w Issue #7.
+Adres IP pochodzi z połączenia bezpośredniego; nagłówki `X-Forwarded-For` nie są zaufane. W środowisku za reverse proxy należy skonfigurować zaufane proxy i dopiero wtedy rozszerzyć ekstrakcję adresu IP.\n\nWygasłe liczniki można usuwać poleceniem `python -m app.security.rate_limit_maintenance`. Domyślna retencja wynosi 24 godziny i można ją zmienić przez `AUTH_RATE_LIMIT_RETENTION_SECONDS` (zakres 1 godzina–365 dni). Polecenie usuwa wyłącznie rekordy starsze niż skonfigurowana retencja. Repozytorium nie instaluje harmonogramu — operator powinien uruchamiać polecenie cyklicznie (np. raz na godzinę) przez własny cron/systemd timer. Limity recovery i osobny test współbieżnych upsertów limitera na PostgreSQL pozostają otwarte w Issue #7.
 
 ## Testy akceptacyjne
 

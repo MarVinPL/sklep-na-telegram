@@ -132,7 +132,7 @@ def registration_options(
     options = generate_registration_options(
         rp_id=settings.webauthn_rp_id,
         rp_name=settings.webauthn_rp_name,
-        user_id=user.id.to_bytes(8, "big"),
+        user_id=user.user_handle,
         user_name=f"telegram-user-{user.id}",
         user_display_name=identity["user"].get("first_name", "Telegram user"),
         exclude_credentials=[

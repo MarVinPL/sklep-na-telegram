@@ -10,11 +10,20 @@ export default function App() {
   const [credentials, setCredentials] = useState<PasskeyItem[]>([]);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const handoffPage = window.location.pathname.endsWith("/handoff.html");
+  const [handoffTicket, setHandoffTicket] = useState<string | null>(() => {
+    if (!window.location.pathname.endsWith("/handoff.html")) return null;
+    const ticket = new URLSearchParams(window.location.hash.slice(1)).get("ticket");
+    if (ticket) window.history.replaceState(null, "", window.location.pathname);
+    return ticket;
+  });
+  const [handoffComplete, setHandoffComplete] = useState(false);
 
   const telegramAvailable = isTelegramContextAvailable();
   const passkeyAvailable = supportsPasskeys();
 
   const refresh = useCallback(async () => {
+    if (handoffPage) return;
     if (!telegramAvailable) {
       setSession("signed-out");
       return;
@@ -28,11 +37,57 @@ export default function App() {
       setSession("signed-out");
       setCredentials([]);
     }
-  }, [telegramAvailable]);
+  }, [handoffPage, telegramAvailable]);
 
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  async function openExternalBrowser() {
+    setBusy(true);
+    setMessage("");
+    try {
+      const ticket = await api<{ handoff_token: string }>("/auth/passkeys/handoff", {
+        method: "POST",
+      });
+      const target = new URL("/handoff.html", window.location.origin);
+      target.hash = new URLSearchParams({ ticket: ticket.handoff_token }).toString();
+      if (window.Telegram?.WebApp.openLink) {
+        window.Telegram.WebApp.openLink(target.toString());
+      } else {
+        const opened = window.open(target.toString(), "_blank", "noopener,noreferrer");
+        if (!opened) throw new Error("Przeglądarka zablokowała otwarcie nowej karty.");
+      }
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Nie udało się otworzyć przeglądarki.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function finishHandoff() {
+    if (!handoffTicket) return;
+    setBusy(true);
+    setMessage("");
+    try {
+      const options = await api<CeremonyOptions>("/auth/passkeys/handoff/authentication/options", {
+        method: "POST",
+        body: JSON.stringify({ handoff_token: handoffTicket }),
+      });
+      setHandoffTicket(null);
+      const credential = await getPasskey(options);
+      await api("/auth/passkeys/handoff/authentication/verify", {
+        method: "POST",
+        body: JSON.stringify({ challenge_id: options.challenge_id, credential }),
+      });
+      setHandoffComplete(true);
+      setMessage("Logowanie Passkey zakończone. Możesz wrócić do Telegrama.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Nie udało się dokończyć logowania Passkey.");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function registerPasskey() {
     setBusy(true);
@@ -120,17 +175,51 @@ export default function App() {
         </div>
       </header>
 
-      {!telegramAvailable && (
+      {!telegramAvailable && !handoffPage && (
         <section className="notice warning">
           <strong>Brak kontekstu Telegrama</strong>
           <p>Otwórz tę Mini App z poziomu bota Telegram. Nie wpisuj PIN-u ani kodów zastępczych.</p>
         </section>
       )}
 
-      {telegramAvailable && !passkeyAvailable && (
+      {handoffPage && !handoffTicket && !handoffComplete && (
+        <section className="notice warning">
+          <strong>Link logowania jest nieprawidłowy lub został już użyty</strong>
+          <p>Wróć do Telegrama i rozpocznij logowanie ponownie.</p>
+        </section>
+      )}
+
+      {handoffPage && handoffTicket && !passkeyAvailable && (
         <section className="notice warning">
           <strong>Ta przeglądarka nie obsługuje WebAuthn</strong>
-          <p>Otwórz Mini App w aktualnej przeglądarce obsługującej Passkeys. Logowanie PIN-em nie jest dostępne.</p>
+          <p>Otwórz link w aktualnej przeglądarce obsługującej Passkeys. Nie używaj PIN-u ani kodów zastępczych.</p>
+        </section>
+      )}
+
+      {handoffPage && handoffTicket && passkeyAvailable && (
+        <section className="panel">
+          <h2>Dokończ logowanie Passkey</h2>
+          <p className="muted">Ten jednorazowy link jest krótkotrwały. Potwierdź tożsamość zapisanym Passkey.</p>
+          <button className="button primary" disabled={busy} onClick={() => void finishHandoff()}>
+            Potwierdź przez Passkey
+          </button>
+        </section>
+      )}
+
+      {handoffPage && handoffComplete && (
+        <section className="notice">
+          <strong>Logowanie zakończone</strong>
+          <p>Sesja została utworzona. Możesz wrócić do Telegrama.</p>
+        </section>
+      )}
+
+      {telegramAvailable && !passkeyAvailable && (
+        <section className="notice warning">
+          <strong>Telegram WebView nie udostępnia WebAuthn</strong>
+          <p>Możesz dokończyć logowanie w zewnętrznej przeglądarce obsługującej Passkeys. Link jest jednorazowy i ważny krótko.</p>
+          <button className="button primary" disabled={busy} onClick={() => void openExternalBrowser()}>
+            Otwórz bezpieczną przeglądarkę
+          </button>
         </section>
       )}
 

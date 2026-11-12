@@ -4,7 +4,7 @@ import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -15,7 +15,7 @@ from webauthn import (
     verify_authentication_response,
     verify_registration_response,
 )
-from webauthn.helpers import base64url_to_bytes
+from webauthn.helpers import base64url_to_bytes, bytes_to_base64url
 from webauthn.helpers.structs import (
     AuthenticatorSelectionCriteria,
     ResidentKeyRequirement,
@@ -26,6 +26,7 @@ from webauthn.helpers.structs import (
 from app.core.config import get_settings
 from app.db import get_db
 from app.models import AuthSession, PasskeyCredential, User, WebAuthnChallenge
+from app.security.sessions import require_session
 from app.security.telegram import verify_telegram_init_data
 
 router = APIRouter(prefix="/auth/passkeys", tags=["passkeys"])
@@ -35,10 +36,6 @@ class FinishRequest(BaseModel):
     challenge_id: str
     credential: dict
     name: str | None = Field(default=None, max_length=120)
-
-
-def _telegram_user(init_data: str) -> tuple[User, dict]:
-    raise RuntimeError("Database-backed helper must be called from endpoint")
 
 
 def _get_or_create_user(db: Session, telegram_user_id: str) -> User:
@@ -68,13 +65,16 @@ def _consume_challenge(db: Session, challenge_id: str, user_id: int, purpose: st
     now = datetime.now(timezone.utc)
     row = db.scalar(
         select(WebAuthnChallenge)
-        .where(WebAuthnChallenge.id == challenge_id)
+        .where(
+            WebAuthnChallenge.id == challenge_id,
+            WebAuthnChallenge.user_id == user_id,
+            WebAuthnChallenge.purpose == purpose,
+            WebAuthnChallenge.consumed_at.is_(None),
+            WebAuthnChallenge.expires_at > now,
+        )
         .with_for_update()
     )
-    if (
-        row is None or row.user_id != user_id or row.purpose != purpose
-        or row.consumed_at is not None or row.expires_at <= now
-    ):
+    if row is None:
         raise HTTPException(status_code=400, detail="Challenge invalid, expired or already used")
     row.consumed_at = now
     db.commit()
@@ -104,7 +104,6 @@ def _session_cookie(db: Session, user: User, response: Response) -> None:
 
 @router.post("/registration/options")
 def registration_options(
-    response: Response,
     x_telegram_init_data: str = Header(..., alias="X-Telegram-Init-Data"),
     db: Session = Depends(get_db),
 ) -> dict:
@@ -154,9 +153,7 @@ def registration_verify(
     except Exception:
         raise HTTPException(status_code=400, detail="Passkey registration verification failed") from None
 
-    credential_id = __import__("webauthn.helpers", fromlist=["bytes_to_base64url"]).bytes_to_base64url(
-        verified.credential_id
-    )
+    credential_id = bytes_to_base64url(verified.credential_id)
     duplicate = db.scalar(select(PasskeyCredential).where(PasskeyCredential.credential_id == credential_id))
     if duplicate:
         raise HTTPException(status_code=409, detail="Passkey already registered")
@@ -190,10 +187,7 @@ def authentication_options(
     options = generate_authentication_options(
         rp_id=settings.webauthn_rp_id,
         allow_credentials=[
-            PublicKeyCredentialDescriptor(
-                id=base64url_to_bytes(item.credential_id),
-                transports=json.loads(item.transports) if item.transports else None,
-            )
+            PublicKeyCredentialDescriptor(id=base64url_to_bytes(item.credential_id))
             for item in credentials
         ],
         user_verification=UserVerificationRequirement.REQUIRED,
@@ -242,12 +236,31 @@ def authentication_verify(
 
 @router.get("/session")
 def current_session(
+    request: Request,
     x_telegram_init_data: str = Header(..., alias="X-Telegram-Init-Data"),
     db: Session = Depends(get_db),
-    response: Response = None,
 ) -> dict:
     identity = verify_telegram_init_data(x_telegram_init_data)
+    session = require_session(request, db)
+    user = db.get(User, session.user_id)
+    if user is None or user.telegram_user_id != identity["telegram_user_id"]:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session identity mismatch")
+    return {"authenticated": True, "telegram_user_id": user.telegram_user_id}
+
+
+@router.post("/logout")
+def logout(
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+) -> dict:
     settings = get_settings()
-    # The cookie is intentionally not accepted as a substitute for fresh Telegram identity.
-    from fastapi import Request
-    raise HTTPException(status_code=501, detail="Use /auth/session for session inspection")
+    raw_token = request.cookies.get(settings.auth_cookie_name)
+    if raw_token:
+        token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+        session = db.scalar(select(AuthSession).where(AuthSession.token_hash == token_hash))
+        if session and session.revoked_at is None:
+            session.revoked_at = datetime.now(timezone.utc)
+            db.commit()
+    response.delete_cookie(settings.auth_cookie_name, path="/", httponly=True, secure=settings.app_env == "production", samesite="lax")
+    return {"logged_out": True}

@@ -1,5 +1,6 @@
 import hashlib
-from datetime import UTC, datetime, timedelta
+import hmac
+from datetime import UTC, datetime
 
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy import case
@@ -10,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.db import get_db
 from app.models import AuthRateLimit
+from app.security.telegram import verify_telegram_init_data
 
 
 def _client_ip(request: Request) -> str:
@@ -17,15 +19,12 @@ def _client_ip(request: Request) -> str:
     return request.client.host if request.client is not None else "unknown"
 
 
-def consume_ip_rate_limit(
-    db: Session, *, client_ip: str, route: str, now: datetime | None = None
+def _consume_bucket(
+    db: Session, *, bucket_key: str, window_seconds: int, now: datetime | None = None
 ) -> tuple[int, int]:
-    settings = get_settings()
     now = now or datetime.now(UTC)
-    window_seconds = settings.auth_rate_limit_window_seconds
     window_epoch = int(now.timestamp()) // window_seconds * window_seconds
     window_start = datetime.fromtimestamp(window_epoch, UTC)
-    key = hashlib.sha256(f"{client_ip}\0{route}".encode()).hexdigest()
     table = AuthRateLimit.__table__
     dialect = db.get_bind().dialect.name
 
@@ -37,7 +36,7 @@ def consume_ip_rate_limit(
         raise RuntimeError("Rate limiting requires PostgreSQL or SQLite")
 
     statement = statement.values(
-        bucket_key=key,
+        bucket_key=bucket_key,
         window_start=window_start,
         request_count=1,
     )
@@ -58,18 +57,65 @@ def consume_ip_rate_limit(
     return count, retry_after
 
 
-def enforce_ip_rate_limit(
-    request: Request, db: Session = Depends(get_db)
-) -> None:
+def consume_ip_rate_limit(
+    db: Session, *, client_ip: str, route: str, now: datetime | None = None
+) -> tuple[int, int]:
     settings = get_settings()
-    count, retry_after = consume_ip_rate_limit(
-        db,
-        client_ip=_client_ip(request),
-        route=request.url.path,
+    key = hashlib.sha256(f"ip\0{client_ip}\0{route}".encode()).hexdigest()
+    return _consume_bucket(
+        db, bucket_key=key, window_seconds=settings.auth_rate_limit_window_seconds, now=now
     )
-    if count > settings.auth_rate_limit_max_requests:
+
+
+def consume_account_rate_limit(
+    db: Session, *, telegram_user_id: str, route: str, now: datetime | None = None
+) -> tuple[int, int]:
+    settings = get_settings()
+    # HMAC prevents a database reader from reversing Telegram numeric IDs by enumeration.
+    material = f"account\0{telegram_user_id}\0{route}".encode()
+    key = hmac.new(settings.telegram_bot_token.encode(), material, hashlib.sha256).hexdigest()
+    return _consume_bucket(
+        db,
+        bucket_key=key,
+        window_seconds=settings.auth_rate_limit_window_seconds,
+        now=now,
+    )
+
+
+def enforce_ip_rate_limit(request: Request, db: Session = Depends(get_db)) -> None:
+    settings = get_settings()
+    route = request.url.path
+    _, ip_retry_after = consume_ip_rate_limit(
+        db, client_ip=_client_ip(request), route=route
+    )
+    ip_count, _ = consume_ip_rate_limit(
+        db, client_ip=_client_ip(request), route=route
+    )
+    if ip_count > settings.auth_rate_limit_max_requests:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Too many authentication requests",
-            headers={"Retry-After": str(retry_after)},
+            headers={"Retry-After": str(ip_retry_after)},
+        )
+
+    # Invalid/missing initData is still covered by the IP bucket. Only a verified
+    # Telegram identity is eligible for the account bucket.
+    raw_init_data = request.headers.get("X-Telegram-Init-Data")
+    if not raw_init_data:
+        return
+    try:
+        identity = verify_telegram_init_data(raw_init_data)
+    except HTTPException:
+        return
+
+    account_count, account_retry_after = consume_account_rate_limit(
+        db,
+        telegram_user_id=identity["telegram_user_id"],
+        route=route,
+    )
+    if account_count > settings.auth_rate_limit_account_max_requests:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many authentication requests",
+            headers={"Retry-After": str(account_retry_after)},
         )

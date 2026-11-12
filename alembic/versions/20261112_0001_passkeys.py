@@ -16,7 +16,7 @@ def upgrade() -> None:
     op.create_table(
         "users",
         sa.Column("id", sa.Integer(), primary_key=True),
-        sa.Column("telegram_user_id", sa.String(length=32), nullable=False, unique=True),
+        sa.Column("telegram_user_id", sa.String(length=32), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
     )
     op.create_index("ix_users_telegram_user_id", "users", ["telegram_user_id"], unique=True)
@@ -25,7 +25,7 @@ def upgrade() -> None:
         "passkey_credentials",
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("user_id", sa.Integer(), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
-        sa.Column("credential_id", sa.String(length=1024), nullable=False, unique=True),
+        sa.Column("credential_id", sa.String(length=1024), nullable=False),
         sa.Column("public_key", sa.LargeBinary(), nullable=False),
         sa.Column("sign_count", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("transports", sa.Text(), nullable=True),
@@ -55,7 +55,7 @@ def upgrade() -> None:
         "auth_sessions",
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("user_id", sa.Integer(), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
-        sa.Column("token_hash", sa.String(length=64), nullable=False, unique=True),
+        sa.Column("token_hash", sa.String(length=64), nullable=False),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("revoked_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),

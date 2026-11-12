@@ -45,7 +45,10 @@ def _consume_bucket(
         set_={
             "window_start": statement.excluded.window_start,
             "request_count": case(
-                (table.c.window_start == statement.excluded.window_start, table.c.request_count + 1),
+                (
+                    table.c.window_start == statement.excluded.window_start,
+                    table.c.request_count + 1,
+                ),
                 else_=1,
             ),
         },
@@ -73,7 +76,9 @@ def consume_account_rate_limit(
     settings = get_settings()
     # HMAC prevents a database reader from reversing Telegram numeric IDs by enumeration.
     material = f"account\0{telegram_user_id}".encode()
-    key = hmac.new(settings.telegram_bot_token.encode(), material, hashlib.sha256).hexdigest()
+    key = hmac.new(
+        settings.telegram_bot_token.encode(), material, hashlib.sha256
+    ).hexdigest()
     return _consume_bucket(
         db,
         bucket_key=key,

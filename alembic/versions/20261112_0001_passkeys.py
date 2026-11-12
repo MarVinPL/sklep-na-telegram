@@ -44,6 +44,7 @@ def upgrade() -> None:
         sa.Column("user_id", sa.Integer(), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
         sa.Column("purpose", sa.String(length=24), nullable=False),
         sa.Column("challenge", sa.LargeBinary(), nullable=False),
+        sa.Column("context_hash", sa.String(length=64), nullable=False),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("consumed_at", sa.DateTime(timezone=True), nullable=True),
     )

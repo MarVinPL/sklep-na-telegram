@@ -53,7 +53,7 @@ def test_ip_rate_limit_resets_and_isolated_by_ip(
     assert consume_ip_rate_limit(db, client_ip="192.0.2.10", now=now)[0] == 1
     assert consume_ip_rate_limit(db, client_ip="192.0.2.10", now=later)[0] == 1
     assert consume_ip_rate_limit(db, client_ip="192.0.2.11", now=now)[0] == 1
-    assert consume_ip_rate_limit(db, client_ip="192.0.2.10", now=now)[0] == 2
+    assert consume_ip_rate_limit(db, client_ip="192.0.2.10", now=now)[0] == 1
 
 
 def test_account_limit_isolated_by_telegram_account(

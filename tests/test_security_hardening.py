@@ -54,6 +54,7 @@ def test_production_configuration_accepts_explicit_secure_values() -> None:
         {"telegram_bot_token": ""},
         {"database_url": "sqlite:///./production.db"},
         {"webauthn_rp_id": "localhost"},
+        {"webauthn_rp_id": "203.0.113.10", "webauthn_origin": "https://203.0.113.10"},
         {"webauthn_origin": "http://shop.example.com"},
         {"webauthn_origin": "https://attacker.example.net"},
         {"webauthn_origin": "https://shop.example.com/path"},

@@ -65,6 +65,25 @@ def test_postgres_allows_only_one_parallel_challenge_consumption(postgres_sessio
     assert results.count(None) == 1
 
 
+class _SelectBarrierSession:
+    """Pause both transactions after their initial SELECT and before either INSERT."""
+
+    def __init__(self, session, barrier: Barrier):
+        self._session = session
+        self._barrier = barrier
+        self._first_scalar = True
+
+    def scalar(self, statement):
+        result = self._session.scalar(statement)
+        if self._first_scalar:
+            self._first_scalar = False
+            self._barrier.wait(timeout=10)
+        return result
+
+    def __getattr__(self, name):
+        return getattr(self._session, name)
+
+
 def test_postgres_concurrent_telegram_user_creation_recovers_unique_race(
     postgres_session_factory,
 ) -> None:
@@ -72,8 +91,8 @@ def test_postgres_concurrent_telegram_user_creation_recovers_unique_race(
 
     def create_user():
         with postgres_session_factory() as session:
-            barrier.wait(timeout=10)
-            user = _get_or_create_user(session, "pg-user-create-race")
+            synchronized_session = _SelectBarrierSession(session, barrier)
+            user = _get_or_create_user(synchronized_session, "pg-user-create-race")
             session.commit()
             return user.id
 

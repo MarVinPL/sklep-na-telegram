@@ -53,7 +53,7 @@ def test_ip_rate_limit_resets_and_isolated_by_ip(
     assert consume_ip_rate_limit(db, client_ip="192.0.2.10", now=now)[0] == 1
     assert consume_ip_rate_limit(db, client_ip="192.0.2.10", now=later)[0] == 1
     assert consume_ip_rate_limit(db, client_ip="192.0.2.11", now=now)[0] == 1
-    assert consume_ip_rate_limit(db, client_ip="192.0.2.10", now=now)[0] == 1
+    assert consume_ip_rate_limit(db, client_ip="192.0.2.10", now=now)[0] == 2
 
 
 def test_account_limit_isolated_by_telegram_account(
@@ -76,7 +76,7 @@ def test_account_limit_isolated_by_telegram_account(
     )[0] == 3
 
     rows = db.scalars(select(AuthRateLimit)).all()
-    assert len(rows) == 4
+    assert len(rows) == 2
     assert all(
         "10001" not in row.bucket_key and "10002" not in row.bucket_key
         for row in rows

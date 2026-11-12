@@ -81,3 +81,36 @@ def test_account_limit_isolated_by_telegram_account(
         "10001" not in row.bucket_key and "10002" not in row.bucket_key
         for row in rows
     )
+
+
+def test_cleanup_removes_only_buckets_older_than_retention(
+    db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.security.rate_limit_maintenance import cleanup_expired_rate_limit_buckets
+
+    monkeypatch.setattr("app.security.rate_limit_maintenance.get_settings", _settings)
+    now = datetime(2026, 11, 12, 12, 0, 15, tzinfo=UTC)
+    db.add_all(
+        [
+            AuthRateLimit(
+                bucket_key="a" * 64,
+                window_start=now - timedelta(days=2),
+                request_count=7,
+            ),
+            AuthRateLimit(
+                bucket_key="b" * 64,
+                window_start=now - timedelta(hours=1),
+                request_count=2,
+            ),
+        ]
+    )
+    db.commit()
+
+    deleted = cleanup_expired_rate_limit_buckets(
+        db, retention_seconds=86400, now=now
+    )
+
+    assert deleted == 1
+    remaining = db.scalars(select(AuthRateLimit)).all()
+    assert len(remaining) == 1
+    assert remaining[0].bucket_key == "b" * 64

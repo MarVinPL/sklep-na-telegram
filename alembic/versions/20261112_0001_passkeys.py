@@ -4,8 +4,8 @@ Revision ID: 20261112_0001
 Revises:
 """
 
-import sqlalchemy as sa
 from alembic import op
+import sqlalchemy as sa
 
 revision = "20261112_0001"
 down_revision = None
@@ -19,7 +19,9 @@ def upgrade() -> None:
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("telegram_user_id", sa.String(length=32), nullable=False),
         sa.Column("user_handle", sa.LargeBinary(length=64), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+        ),
     )
     op.create_index("ix_users_telegram_user_id", "users", ["telegram_user_id"], unique=True)
     op.create_index("ix_users_user_handle", "users", ["user_handle"], unique=True)
@@ -27,7 +29,9 @@ def upgrade() -> None:
     op.create_table(
         "passkey_credentials",
         sa.Column("id", sa.Integer(), primary_key=True),
-        sa.Column("user_id", sa.Integer(), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "user_id", sa.Integer(), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+        ),
         sa.Column("credential_id", sa.String(length=1024), nullable=False),
         sa.Column("public_key", sa.LargeBinary(), nullable=False),
         sa.Column("sign_count", sa.Integer(), nullable=False, server_default="0"),
@@ -39,7 +43,9 @@ def upgrade() -> None:
         sa.Column("revoked_at", sa.DateTime(timezone=True), nullable=True),
     )
     op.create_index("ix_passkey_credentials_user_id", "passkey_credentials", ["user_id"])
-    op.create_index("ix_passkey_credentials_credential_id", "passkey_credentials", ["credential_id"], unique=True)
+    op.create_index(
+        "ix_passkey_credentials_credential_id", "passkey_credentials", ["credential_id"], unique=True
+    )
 
     op.create_table(
         "webauthn_challenges",

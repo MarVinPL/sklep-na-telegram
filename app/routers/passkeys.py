@@ -55,6 +55,7 @@ def _new_challenge(db: Session, user: User, purpose: str, challenge: bytes, init
         user_id=user.id,
         purpose=purpose,
         challenge=challenge,
+        context_hash=hashlib.sha256(init_data.encode()).hexdigest(),
         expires_at=datetime.now(timezone.utc) + timedelta(seconds=settings.webauthn_challenge_ttl),
     ))
     db.commit()
@@ -69,6 +70,7 @@ def _consume_challenge(db: Session, challenge_id: str, user_id: int, purpose: st
             WebAuthnChallenge.id == challenge_id,
             WebAuthnChallenge.user_id == user_id,
             WebAuthnChallenge.purpose == purpose,
+            WebAuthnChallenge.context_hash == hashlib.sha256(init_data.encode()).hexdigest(),
             WebAuthnChallenge.consumed_at.is_(None),
             WebAuthnChallenge.expires_at > now,
         )

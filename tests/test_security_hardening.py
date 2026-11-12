@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException, Request, Response
+from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
@@ -14,6 +15,7 @@ from app.core.config import Settings
 from app.db import Base
 from app.models import AuthSession, User
 from app.routers import passkeys
+from app.security.origins import require_allowed_origin
 from app.security.sessions import require_session
 
 
@@ -43,13 +45,18 @@ def production_settings(**overrides: str) -> dict[str, str]:
     return values
 
 
-def make_request(raw_token: str) -> Request:
+def make_request(raw_token: str = "", method: str = "GET", origin: str | None = None) -> Request:
+    headers = []
+    if raw_token:
+        headers.append((b"cookie", f"shop_session={raw_token}".encode()))
+    if origin is not None:
+        headers.append((b"origin", origin.encode()))
     return Request(
         {
             "type": "http",
-            "method": "GET",
+            "method": method,
             "path": "/",
-            "headers": [(b"cookie", f"shop_session={raw_token}".encode())],
+            "headers": headers,
             "query_string": b"",
             "server": ("testserver", 443),
             "client": ("127.0.0.1", 12345),
@@ -75,6 +82,11 @@ def test_production_configuration_accepts_explicit_secure_values() -> None:
         {"webauthn_origin": "http://shop.example.com"},
         {"webauthn_origin": "https://attacker.example.net"},
         {"webauthn_origin": "https://shop.example.com/path"},
+        {"webauthn_origin": "https://shop.example.com/"},
+        {"cors_allowed_origins": "https://*.example.com"},
+        {"cors_allowed_origins": "https://attacker.example.net"},
+        {"cors_allowed_origins": "https://shop.example.com/path"},
+        {"cors_allowed_origins": "https://shop.example.com/"},
     ],
 )
 def test_production_configuration_rejects_unsafe_values(overrides: dict[str, str]) -> None:
@@ -203,3 +215,113 @@ def test_logout_revokes_server_session_and_clears_cookie(
     assert result == {"logged_out": True}
     assert session.revoked_at is not None
     assert "max-age=0" in response.headers["set-cookie"].lower()
+
+
+
+def test_allowed_origin_accepts_configured_origin_on_post(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.security.origins.get_settings",
+        lambda: SimpleNamespace(allowed_origins=["https://shop.example.com"]),
+    )
+    assert require_allowed_origin(
+        make_request(method="POST", origin="https://shop.example.com")
+    ) is None
+
+
+@pytest.mark.parametrize("origin", [None, "https://attacker.example.net", "null"])
+def test_allowed_origin_rejects_missing_or_untrusted_origin(
+    monkeypatch: pytest.MonkeyPatch, origin: str | None
+) -> None:
+    monkeypatch.setattr(
+        "app.security.origins.get_settings",
+        lambda: SimpleNamespace(allowed_origins=["https://shop.example.com"]),
+    )
+    with pytest.raises(HTTPException) as error:
+        require_allowed_origin(make_request(method="POST", origin=origin))
+    assert error.value.status_code == 403
+
+
+def test_safe_read_method_does_not_require_origin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.security.origins.get_settings",
+        lambda: SimpleNamespace(allowed_origins=["https://shop.example.com"]),
+    )
+    assert require_allowed_origin(make_request(method="GET")) is None
+
+
+
+def test_allowed_origins_uses_exact_comma_separated_values() -> None:
+    settings = Settings(
+        _env_file=None,
+        **production_settings(
+            cors_allowed_origins="https://shop.example.com,https://admin.example.com"
+        ),
+    )
+    assert settings.allowed_origins == [
+        "https://shop.example.com",
+        "https://admin.example.com",
+    ]
+
+
+def test_allowed_origins_defaults_to_webauthn_origin() -> None:
+    settings = Settings(_env_file=None, **production_settings())
+    assert settings.allowed_origins == ["https://shop.example.com"]
+
+
+
+def test_cors_preflight_allows_only_configured_origin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = SimpleNamespace(
+        app_name="test",
+        app_env="production",
+        allowed_origins=["https://shop.example.com"],
+    )
+    monkeypatch.setattr("app.main.get_settings", lambda: settings)
+    from app.main import create_app
+
+    client = TestClient(create_app())
+    allowed = client.options(
+        "/auth/passkeys/logout",
+        headers={
+            "Origin": "https://shop.example.com",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "content-type",
+        },
+    )
+    denied = client.options(
+        "/auth/passkeys/logout",
+        headers={
+            "Origin": "https://attacker.example.net",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "content-type",
+        },
+    )
+
+    assert allowed.status_code == 200
+    assert allowed.headers["access-control-allow-origin"] == "https://shop.example.com"
+    assert allowed.headers["access-control-allow-credentials"] == "true"
+    assert denied.status_code == 400
+
+
+def test_passkey_post_rejects_untrusted_origin_before_auth_logic(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = SimpleNamespace(
+        app_name="test",
+        app_env="production",
+        allowed_origins=["https://shop.example.com"],
+    )
+    monkeypatch.setattr("app.main.get_settings", lambda: settings)
+    monkeypatch.setattr("app.security.origins.get_settings", lambda: settings)
+    from app.main import create_app
+
+    response = TestClient(create_app()).post(
+        "/auth/passkeys/logout",
+        headers={"Origin": "https://attacker.example.net"},
+    )
+    assert response.status_code == 403

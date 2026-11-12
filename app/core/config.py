@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     auth_session_ttl: int = 86400
     auth_cookie_name: str = "shop_session"
     auth_rate_limit_max_requests: int = Field(default=10, ge=1, le=1000)
+    auth_rate_limit_account_max_requests: int = Field(default=6, ge=1, le=1000)
     auth_rate_limit_window_seconds: int = Field(default=60, ge=1, le=3600)
 
     @property

@@ -1,5 +1,6 @@
 from datetime import UTC, datetime, timedelta
 
+from cryptography.fernet import Fernet
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
@@ -13,6 +14,11 @@ def _database():
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     Base.metadata.create_all(engine)
     return engine
+
+
+def _configure_crypto(monkeypatch) -> None:
+    fernet = Fernet(Fernet.generate_key())
+    monkeypatch.setattr(notifications, "encrypt_payload", lambda value: fernet.encrypt(value.encode()))
 
 
 def _case(db: Session, status: str = "awaiting_notification_delivery") -> RecoveryCase:
@@ -32,11 +38,7 @@ def _case(db: Session, status: str = "awaiting_notification_delivery") -> Recove
 
 
 def test_outbox_is_idempotent_and_payload_is_encrypted(monkeypatch):
-    monkeypatch.setattr(
-        notifications,
-        "encrypt_payload",
-        lambda value: ("encrypted:" + value).encode(),
-    )
+    _configure_crypto(monkeypatch)
     engine = _database()
     with Session(engine) as db:
         user = User(telegram_user_id="123456")
@@ -65,11 +67,12 @@ def test_outbox_is_idempotent_and_payload_is_encrypted(monkeypatch):
         assert len(rows) == 2
         email = next(row for row in rows if row.channel == "email")
         assert b"secret-token-value" not in email.encrypted_payload
-        assert email.encrypted_payload.startswith(b"encrypted:")
+        assert not email.encrypted_payload.startswith(b"{")
     engine.dispose()
 
 
 def test_hold_starts_only_after_both_channels_are_delivered(monkeypatch):
+    _configure_crypto(monkeypatch)
     engine = _database()
     monkeypatch.setattr(notifications, "_deliver", lambda db, row: None)
     with Session(engine) as db:
@@ -94,6 +97,7 @@ def test_hold_starts_only_after_both_channels_are_delivered(monkeypatch):
 
 
 def test_critical_delivery_failure_blocks_case_and_uses_bounded_retry(monkeypatch):
+    _configure_crypto(monkeypatch)
     engine = _database()
 
     def fail_delivery(db, row):
@@ -125,6 +129,7 @@ def test_critical_delivery_failure_blocks_case_and_uses_bounded_retry(monkeypatc
 
 
 def test_transient_failure_is_retried_with_backoff(monkeypatch):
+    _configure_crypto(monkeypatch)
     engine = _database()
     monkeypatch.setattr(
         notifications,

@@ -153,6 +153,16 @@ def test_contact_is_encrypted_and_only_verified_by_one_use_email_token(
         headers=headers,
     )
     assert options.status_code == 200
+    with factory() as db:
+        user = db.scalar(select(User).where(User.telegram_user_id == "424242"))
+        db.add(RecoveryContact(
+            user_id=user.id,
+            encrypted_email=b"expired",
+            email_digest="b" * 64,
+            verification_token_hash=None,
+            verification_expires_at=datetime.now(UTC) - timedelta(minutes=1),
+        ))
+        db.commit()
     credential_id = bytes_to_base64url(b"credential-0")
     verified = client.post(
         "/auth/passkeys/recovery-contact/registration/verify",

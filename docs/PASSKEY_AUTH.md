@@ -91,3 +91,22 @@ Każdy etap ceremonii wymaga zweryfikowanego nagłówka `X-Telegram-Init-Data`. 
 To nadal nie jest kompletna funkcja produkcyjna: nie ma jeszcze frontendowej Mini App wywołującej `navigator.credentials.create/get`, testów kryptograficznych end-to-end z rzeczywistymi authenticatorami, testów Telegram WebView, pełnego procesu odzyskiwania ani przeglądu bezpieczeństwa. Rate limiting musi zostać dodany na warstwie API/gateway przed wystawieniem publicznym. Nie deklarujemy zgodności Telegram Android/iOS/Desktop bez testów na rzeczywistych klientach.
 
 Lokalnie ustaw `TELEGRAM_BOT_TOKEN`, `WEBAUTHN_RP_ID` i `WEBAUTHN_ORIGIN`. W środowisku produkcyjnym wymagane są HTTPS oraz dokładne dopasowanie RP ID i originu.
+
+
+## Hardening CSRF, Origin i CORS
+
+Wszystkie mutujące endpointy routera Passkey wymagają nagłówka `Origin` dokładnie równego jednej z wartości `CORS_ALLOWED_ORIGINS`. Brak Origin, `null`, wildcard lub obcy origin są odrzucane kodem 403. Metody GET/HEAD i preflight OPTIONS nie wymagają tego nagłówka.
+
+- `CORS_ALLOWED_ORIGINS` przyjmuje rozdzielone przecinkami, pełne originy (scheme + host + opcjonalny port), bez ścieżek, query, fragmentów i wildcardów.
+- Gdy lista jest pusta, używany jest `WEBAUTHN_ORIGIN`.
+- Middleware CORS dopuszcza credentials wyłącznie dla skonfigurowanych originów, metod GET/POST/OPTIONS i nagłówków Content-Type oraz X-Telegram-Init-Data.
+- W produkcji originy muszą używać HTTPS i należeć do domeny RP ID lub jej subdomen.
+- Cookie sesyjne pozostaje HttpOnly, Secure poza development i SameSite=Lax.
+
+Lokalny przykład dopuszcza `http://localhost:5173` (Vite) oraz `http://localhost:8000` (API). Nie dodawaj wildcardów ani originów Telegrama na ślepo — przed produkcją należy potwierdzić rzeczywisty Origin wysyłany przez docelowe Telegram WebView.
+
+## Sesje i współbieżność
+
+Polityka backendu to jedna aktywna sesja aplikacyjna na użytkownika. Po poprawnym logowaniu wcześniejsze aktywne sesje są unieważniane w tej samej transakcji, w której powstaje nowa sesja. Unieważnienie Passkey unieważnia również sesje użytkownika. Tworzenie użytkownika obsługuje wyścig równoległych pierwszych żądań przez ponowne odczytanie rekordu po konflikcie unikalności Telegram ID.
+
+CI uruchamia dodatkowo testy współbieżnego zużycia tego samego challenge i tworzenia użytkownika na PostgreSQL 16. Testy SQLite nie zastępują tych testów, ponieważ SQLite nie zapewnia semantyki blokad wierszy PostgreSQL.

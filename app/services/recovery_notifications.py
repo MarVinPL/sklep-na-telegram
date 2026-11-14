@@ -196,15 +196,24 @@ def expire_due_recovery_cases(db: Session) -> int:
     now = datetime.now(UTC)
     cases = db.scalars(
         select(RecoveryCase)
-        .where(
-            RecoveryCase.status == "awaiting_approvals",
-            RecoveryCase.contact_approved_at.is_(None),
-            RecoveryCase.contact_approval_expires_at.is_not(None),
-            RecoveryCase.contact_approval_expires_at <= now,
-        )
+        .where(RecoveryCase.status == "awaiting_approvals")
         .with_for_update(skip_locked=True)
     ).all()
+    expired_cases = []
     for case in cases:
+        created_at = case.created_at.replace(tzinfo=UTC) if case.created_at.tzinfo is None else case.created_at
+        approval_expires_at = case.contact_approval_expires_at
+        if approval_expires_at is not None and approval_expires_at.tzinfo is None:
+            approval_expires_at = approval_expires_at.replace(tzinfo=UTC)
+        contact_expired = (
+            case.contact_approved_at is None
+            and approval_expires_at is not None
+            and approval_expires_at <= now
+        )
+        operator_expired = case.operator_approved_at is None and created_at + timedelta(days=7) <= now
+        if not contact_expired and not operator_expired:
+            continue
+        expired_cases.append(case)
         case.status = "expired"
         case.contact_approval_token_hash = None
         case.veto_token_hash = None
@@ -219,4 +228,4 @@ def expire_due_recovery_cases(db: Session) -> int:
             telegram_body="Wniosek odzyskiwania Passkey wygasł bez zatwierdzenia kontaktu.",
         )
     db.commit()
-    return len(cases)
+    return len(expired_cases)

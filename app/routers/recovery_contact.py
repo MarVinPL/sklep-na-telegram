@@ -145,7 +145,8 @@ def registration_verify(
         raise HTTPException(status_code=422, detail="A valid email address is required")
     existing = db.get(RecoveryContact, user.id)
     if existing is not None and (
-        existing.verified_at is not None or existing.verification_expires_at > datetime.now(UTC)
+        existing.verified_at is not None
+        or _is_unexpired(existing.verification_expires_at, datetime.now(UTC))
     ):
         raise HTTPException(status_code=409, detail="A recovery contact is already registered or pending")
 

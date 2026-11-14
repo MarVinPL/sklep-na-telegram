@@ -121,13 +121,18 @@ def test_operator_change_requires_two_distinct_approvals(operator_client):
 
 def test_operator_cannot_decide_own_recovery_and_case_decision_is_unique(operator_client):
     client, factory = operator_client
-    ids = seed(factory, "operator", "target")
+    ids = seed(factory, "operator", "target", "verifier")
     with factory() as db:
         db.add(SecurityOperator(user_id=ids["operator"], grant_reason="bootstrap"))
+        db.add(SecurityOperator(user_id=ids["verifier"], grant_reason="independent verifier"))
         db.add(RecoveryContact(
             user_id=ids["target"], encrypted_email=b"ciphertext", email_digest="d" * 64,
             verification_expires_at=datetime.now(UTC) + timedelta(days=1),
             verified_at=datetime.now(UTC),
+            independence_verified_at=datetime.now(UTC),
+            independence_verifier_user_id=ids["verifier"],
+            independence_method="independent_voice",
+            independence_audit_ref="AUDIT-2026-TEST-002",
         ))
         db.add(RecoveryCase(
             id="7b4b1d6e-9d6f-4e91-8c27-9b35b8f53e2a",

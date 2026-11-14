@@ -14,7 +14,7 @@
 
 - Each event is deduplicated by (event_key, channel) using database-native conflict handling.
 - Payloads are encrypted at rest using RECOVERY_CONTACT_ENCRYPTION_KEY. Tokens are never stored in plaintext in the outbox.
-- Every delivery attempt is recorded with an outcome and a normalized error code. Provider responses, tokens, addresses and message bodies are not logged.
+- Every delivery attempt is recorded with an outcome and a normalized error code. Active security operators can inspect sanitized event/channel status and attempt history; provider responses, tokens, addresses and message bodies are never exposed.
 - Retry is bounded to eight attempts with exponential backoff capped at six hours. Exhaustion marks the row dead and the recovery case notification_blocked.
 - Delivery is at-least-once. SMTP/Telegram APIs cannot provide end-to-end exactly-once delivery; an ambiguous provider timeout can result in a duplicate message. Event enqueue is idempotent.
 - A dedicated notification-worker Compose service polls the outbox, expires stalled approvals, and detects the end of the 24-hour hold so the completion notice does not depend on a user opening the status screen. It needs the same PostgreSQL database, the encryption key, an operator-managed SMTP relay and a Telegram bot token.

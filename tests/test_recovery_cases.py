@@ -52,12 +52,19 @@ def _seed_recovery_user(factory, telegram_id="recover-me"):
         user = User(telegram_user_id=telegram_id)
         db.add(user)
         db.flush()
+        verifier = User(telegram_user_id=f"{telegram_id}-independent-verifier")
+        db.add(verifier)
+        db.flush()
         db.add(RecoveryContact(
             user_id=user.id,
             encrypted_email=b"encrypted-placeholder",
             email_digest=(telegram_id.encode().hex() + "0" * 64)[:64],
             verification_expires_at=datetime.now(UTC) + timedelta(days=1),
             verified_at=datetime.now(UTC),
+            independence_verified_at=datetime.now(UTC),
+            independence_verifier_user_id=verifier.id,
+            independence_method="independent_voice",
+            independence_audit_ref="AUDIT-2026-TEST-001",
         ))
         db.commit()
 
@@ -157,6 +164,33 @@ def test_case_owner_can_cancel_and_cancellation_is_audited(monkeypatch):
             select(NotificationOutbox).where(NotificationOutbox.event_key == f"{case_id}:case_cancelled")
         ).all()
         assert len(notice_rows) == 2
+    client.close()
+    Base.metadata.drop_all(engine)
+    engine.dispose()
+
+
+def test_mailbox_verification_without_independence_attestation_is_blocked(monkeypatch):
+    engine, factory, client = _make_client(monkeypatch)
+    with factory() as db:
+        user = User(telegram_user_id="email-only")
+        db.add(user)
+        db.flush()
+        db.add(RecoveryContact(
+            user_id=user.id,
+            encrypted_email=b"encrypted-placeholder",
+            email_digest="e" * 64,
+            verification_expires_at=datetime.now(UTC) + timedelta(days=1),
+            verified_at=datetime.now(UTC),
+        ))
+        db.commit()
+    response = client.post(
+        "/auth/passkeys/recovery/cases",
+        headers={"Origin": ORIGIN, "X-Telegram-Init-Data": "email-only"},
+    )
+    assert response.status_code == 409
+    assert "independent-contact attestation" in response.json()["detail"]
+    with factory() as db:
+        assert db.scalar(select(RecoveryCase)) is None
     client.close()
     Base.metadata.drop_all(engine)
     engine.dispose()

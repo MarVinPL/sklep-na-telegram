@@ -206,8 +206,12 @@ def test_contact_is_encrypted_and_only_verified_by_one_use_email_token(
     assert status_response.status_code == 200
     assert status_response.json() == {
         "configured": True,
+        "mailbox_verified": True,
         "verified": True,
         "verification_pending": False,
+        "independence_verified": False,
+        "independence_revoked": False,
+        "recovery_eligible": False,
     }
 
 

@@ -17,18 +17,25 @@ services:
       retries: 10
 
   api:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    build: .
     restart: unless-stopped
     environment:
       APP_ENV: ${APP_ENV:-development}
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-telegram_shop}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-telegram_shop}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_INIT_DATA_MAX_AGE: ${TELEGRAM_INIT_DATA_MAX_AGE:-300}
+      WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID:-localhost}
+      WEBAUTHN_RP_NAME: ${WEBAUTHN_RP_NAME:-Sklep na Telegram}
+      WEBAUTHN_ORIGIN: ${WEBAUTHN_ORIGIN:-http://localhost:8000}
+      WEBAUTHN_CHALLENGE_TTL: ${WEBAUTHN_CHALLENGE_TTL:-180}
+      AUTH_SESSION_TTL: ${AUTH_SESSION_TTL:-86400}
+      AUTH_COOKIE_NAME: ${AUTH_COOKIE_NAME:-shop_session}
     ports:
       - "127.0.0.1:${API_PORT:-8000}:8000"
     depends_on:
       db:
         condition: service_healthy
+    command: ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
 
 volumes:
   postgres_data:

@@ -538,10 +538,12 @@ def redeem_handoff(
         )
     )
     if handoff is None:
+        logger.info("passkey_handoff event=redeem_rejected reason=invalid_context_or_expired")
         raise HTTPException(status_code=400, detail="Handoff invalid, expired or already used")
 
     user = db.get(User, handoff.user_id)
     if user is None or user.telegram_user_id != identity["telegram_user_id"]:
+        logger.info("passkey_handoff event=redeem_rejected reason=identity_mismatch")
         raise HTTPException(status_code=400, detail="Handoff invalid, expired or already used")
     if handoff.verified_at is None:
         return {"authenticated": False}
@@ -562,6 +564,7 @@ def redeem_handoff(
         .returning(PasskeyHandoff.user_id)
     ).scalar_one_or_none()
     if user_id is None:
+        logger.info("passkey_handoff event=redeem_rejected reason=replay user_id=%s", handoff.user_id)
         return {"authenticated": False}
 
     user = db.get(User, user_id)

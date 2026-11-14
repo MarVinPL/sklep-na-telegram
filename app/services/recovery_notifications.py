@@ -192,7 +192,7 @@ def dispatch_due_notifications(db: Session, *, limit: int = 25) -> int:
 
 
 def expire_due_recovery_cases(db: Session) -> int:
-    """Expire cases whose short-lived contact approval window elapsed."""
+    """Expire stalled cases and enqueue end-of-hold notices without user polling."""
     now = datetime.now(UTC)
     cases = db.scalars(
         select(RecoveryCase)
@@ -227,5 +227,27 @@ def expire_due_recovery_cases(db: Session) -> int:
             email_body=f"Okno zatwierdzenia kontaktu dla sprawy {case.id} wygasło. Nie wydano tokenu ani sesji.",
             telegram_body="Wniosek odzyskiwania Passkey wygasł bez zatwierdzenia kontaktu.",
         )
+    completed_cases = db.scalars(
+        select(RecoveryCase)
+        .where(
+            RecoveryCase.status == "hold_active",
+            RecoveryCase.hold_ends_at.is_not(None),
+            RecoveryCase.hold_ends_at <= now,
+            RecoveryCase.vetoed_at.is_(None),
+        )
+        .with_for_update(skip_locked=True)
+    ).all()
+    for case in completed_cases:
+        case.status = "hold_complete_pending_review"
+        case.updated_at = now
+        queue_event(
+            db,
+            user_id=case.user_id,
+            event_key=f"{case.id}:hold_complete",
+            event_type="recovery_hold_complete",
+            email_subject="Zakończono 24-godzinny okres ochronny",
+            email_body=f"Okres ochronny sprawy {case.id} dobiegł końca. Sprawa wymaga jeszcze ręcznej kontroli; żaden token nie został wydany.",
+            telegram_body="Okres ochronny dobiegł końca. Odzyskiwanie nadal oczekuje na ręczną kontrolę.",
+        )
     db.commit()
-    return len(expired_cases)
+    return len(expired_cases) + len(completed_cases)

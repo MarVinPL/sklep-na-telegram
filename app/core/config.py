@@ -56,9 +56,12 @@ class Settings(BaseSettings):
             raise ValueError("SMTP_USERNAME and SMTP_PASSWORD must be configured together")
         if self.smtp_ssl and self.smtp_starttls:
             raise ValueError("SMTP_SSL and SMTP_STARTTLS cannot both be enabled")
-        if self.app_env.lower() == "production" and configured:
-            if not (self.smtp_ssl or self.smtp_starttls):
-                raise ValueError("Production SMTP requires TLS")
+        if (
+            self.app_env.lower() == "production"
+            and configured
+            and not (self.smtp_ssl or self.smtp_starttls)
+        ):
+            raise ValueError("Production SMTP requires TLS")
         return self
 
     @model_validator(mode="after")

@@ -213,6 +213,51 @@ def veto_recovery_case(
     return {"veto_recorded": True, "status": "manual_review"}
 
 
+
+
+@router.post("/cases/{case_id}/cancel")
+def cancel_recovery_case(
+    case_id: str,
+    x_telegram_init_data: str = Header(..., alias="X-Telegram-Init-Data"),
+    db: Session = Depends(get_db),
+) -> dict:
+    identity = verify_telegram_init_data(x_telegram_init_data)
+    user = db.scalar(select(User).where(User.telegram_user_id == identity["telegram_user_id"]))
+    if user is None:
+        raise HTTPException(status_code=404, detail="Account not found")
+    try:
+        normalized = str(uuid.UUID(case_id))
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Invalid recovery case identifier") from None
+    case = db.scalar(
+        select(RecoveryCase)
+        .where(RecoveryCase.id == normalized, RecoveryCase.user_id == user.id)
+        .with_for_update()
+    )
+    if case is None:
+        raise HTTPException(status_code=404, detail="Recovery case not found")
+    if case.status not in {
+        "awaiting_approvals", "awaiting_notification_delivery",
+        "hold_active", "hold_complete_pending_review",
+    }:
+        raise HTTPException(status_code=409, detail="Recovery case cannot be cancelled in its current state")
+    now = datetime.now(UTC)
+    case.status = "cancelled"
+    case.contact_approval_token_hash = None
+    case.veto_token_hash = None
+    case.updated_at = now
+    _queue_case_event(
+        db,
+        case,
+        "case_cancelled",
+        email_subject="Wniosek odzyskiwania Passkey anulowano",
+        email_body=f"Wniosek odzyskiwania {case.id} został anulowany. Nie wydano tokenu ani sesji.",
+        telegram_body="Wniosek odzyskiwania Passkey został anulowany.",
+    )
+    db.commit()
+    return {"cancelled": True, "status": case.status}
+
+
 @router.get("/cases/{case_id}")
 def get_recovery_case_status(
     case_id: str,

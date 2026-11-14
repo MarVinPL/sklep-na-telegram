@@ -121,13 +121,19 @@ def test_operator_change_requires_two_distinct_approvals(operator_client):
 
 def test_operator_cannot_decide_own_recovery_and_case_decision_is_unique(operator_client):
     client, factory = operator_client
-    ids = seed(factory, "operator", "target")
+    ids = seed(factory, "operator", "target", "verifier")
     with factory() as db:
         db.add(SecurityOperator(user_id=ids["operator"], grant_reason="bootstrap"))
+        db.add(SecurityOperator(user_id=ids["verifier"], grant_reason="independent verifier"))
         db.add(RecoveryContact(
             user_id=ids["target"], encrypted_email=b"ciphertext", email_digest="d" * 64,
             verification_expires_at=datetime.now(UTC) + timedelta(days=1),
             verified_at=datetime.now(UTC),
+            independence_verified_at=datetime.now(UTC),
+            independence_verifier_user_id=ids["verifier"],
+            independence_telegram_identity_hash=hashlib.sha256(b"target").hexdigest(),
+            independence_method="independent_voice",
+            independence_audit_ref="AUDIT-2026-TEST-002",
         ))
         db.add(RecoveryCase(
             id="7b4b1d6e-9d6f-4e91-8c27-9b35b8f53e2a",
@@ -153,3 +159,72 @@ def test_operator_cannot_decide_own_recovery_and_case_decision_is_unique(operato
     assert client.post(path, headers=headers, json=body).status_code == 409
     own = {**body, "recovery_telegram_user_id": "operator"}
     assert client.post(path, headers=headers, json=own).status_code == 403
+
+
+
+def test_operator_can_record_and_revoke_independence_attestation(operator_client):
+    client, factory = operator_client
+    ids = seed(factory, "verifier", "target")
+    with factory() as db:
+        db.add(SecurityOperator(user_id=ids["verifier"], grant_reason="authorized independent verifier"))
+        db.add(RecoveryContact(
+            user_id=ids["target"],
+            encrypted_email=b"ciphertext",
+            email_digest="a" * 64,
+            verification_expires_at=datetime.now(UTC) + timedelta(days=1),
+            verified_at=datetime.now(UTC),
+        ))
+        db.commit()
+    client.cookies.set("shop_session", f"{SESSION}-verifier")
+    headers = {"Origin": ORIGIN, "X-Telegram-Init-Data": "verifier"}
+    attested = client.post(
+        "/auth/passkeys/recovery-operators/contacts/target/independence",
+        headers=headers,
+        json={
+            "method": "independent_voice",
+            "audit_reference": "AUDIT-2026-0001",
+            "reason": "Verified control through a separate pre-existing channel",
+        },
+    )
+    assert attested.status_code == 200
+    with factory() as db:
+        contact = db.get(RecoveryContact, ids["target"])
+        assert contact.independence_verified_at is not None
+        assert contact.independence_verifier_user_id == ids["verifier"]
+        assert contact.independence_audit_ref == "AUDIT-2026-0001"
+
+    revoked = client.post(
+        "/auth/passkeys/recovery-operators/contacts/target/independence/revoke",
+        headers=headers,
+        json={"reason": "Independent channel reported possible compromise"},
+    )
+    assert revoked.status_code == 200
+    with factory() as db:
+        contact = db.get(RecoveryContact, ids["target"])
+        assert contact.independence_revoked_at is not None
+
+
+def test_operator_cannot_attest_own_recovery_contact(operator_client):
+    client, factory = operator_client
+    ids = seed(factory, "operator")
+    with factory() as db:
+        db.add(SecurityOperator(user_id=ids["operator"], grant_reason="bootstrap"))
+        db.add(RecoveryContact(
+            user_id=ids["operator"],
+            encrypted_email=b"ciphertext",
+            email_digest="b" * 64,
+            verification_expires_at=datetime.now(UTC) + timedelta(days=1),
+            verified_at=datetime.now(UTC),
+        ))
+        db.commit()
+    client.cookies.set("shop_session", f"{SESSION}-operator")
+    response = client.post(
+        "/auth/passkeys/recovery-operators/contacts/operator/independence",
+        headers={"Origin": ORIGIN, "X-Telegram-Init-Data": "operator"},
+        json={
+            "method": "independent_voice",
+            "audit_reference": "AUDIT-SELF-0001",
+            "reason": "Attempted self-attestation should be denied",
+        },
+    )
+    assert response.status_code == 403

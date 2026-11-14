@@ -40,6 +40,19 @@ def _aware(value: datetime) -> datetime:
     return value.replace(tzinfo=UTC) if value.tzinfo is None else value
 
 
+def _has_valid_independence_attestation(db: Session, user_id: int) -> bool:
+    contact = db.get(RecoveryContact, user_id)
+    return bool(
+        contact is not None
+        and contact.verified_at is not None
+        and contact.independence_verified_at is not None
+        and contact.independence_verifier_user_id is not None
+        and contact.independence_method
+        and contact.independence_audit_ref
+        and contact.independence_revoked_at is None
+    )
+
+
 def _queue_case_event(
     db: Session,
     case: RecoveryCase,
@@ -74,8 +87,11 @@ def start_recovery_case(
     if user is None:
         raise HTTPException(status_code=404, detail="Account not found")
     contact = db.get(RecoveryContact, user.id)
-    if contact is None or contact.verified_at is None:
-        raise HTTPException(status_code=409, detail="A verified independent recovery contact is required")
+    if not _has_valid_independence_attestation(db, user.id):
+        raise HTTPException(
+            status_code=409,
+            detail="Mailbox verification alone is insufficient; an active independent-contact attestation is required",
+        )
     active = db.scalar(
         select(RecoveryCase).where(
             RecoveryCase.user_id == user.id,
@@ -141,6 +157,8 @@ def approve_recovery_contact(
         raise HTTPException(status_code=422, detail="Invalid recovery case identifier") from None
     case = db.scalar(select(RecoveryCase).where(RecoveryCase.id == normalized).with_for_update())
     now = datetime.now(UTC)
+    if case is not None and not _has_valid_independence_attestation(db, case.user_id):
+        raise HTTPException(status_code=409, detail="Recovery contact independence attestation is missing or revoked")
     if (
         case is None
         or case.status not in {"awaiting_approvals", "awaiting_notification_delivery"}
@@ -187,6 +205,8 @@ def veto_recovery_case(
         raise HTTPException(status_code=422, detail="Invalid recovery case identifier") from None
     case = db.scalar(select(RecoveryCase).where(RecoveryCase.id == normalized).with_for_update())
     now = datetime.now(UTC)
+    if case is not None and not _has_valid_independence_attestation(db, case.user_id):
+        raise HTTPException(status_code=409, detail="Recovery contact independence attestation is missing or revoked")
     if (
         case is None
         or case.status in {"vetoed", "cancelled"}

@@ -134,3 +134,30 @@ def test_telegram_init_data_only_starts_case_and_does_not_create_session(monkeyp
     client.close()
     Base.metadata.drop_all(engine)
     engine.dispose()
+
+
+
+def test_case_owner_can_cancel_and_cancellation_is_audited(monkeypatch):
+    engine, factory, client = _make_client(monkeypatch)
+    _seed_recovery_user(factory)
+    headers = {"Origin": ORIGIN, "X-Telegram-Init-Data": "recover-me"}
+    started = client.post("/auth/passkeys/recovery/cases", headers=headers)
+    assert started.status_code == 200
+    case_id = started.json()["case_id"]
+    cancelled = client.post(
+        f"/auth/passkeys/recovery/cases/{case_id}/cancel",
+        headers=headers,
+    )
+    assert cancelled.status_code == 200
+    assert cancelled.json()["status"] == "cancelled"
+    with factory() as db:
+        case = db.get(RecoveryCase, case_id)
+        assert case.status == "cancelled"
+        assert case.contact_approval_token_hash is None
+        notice_rows = db.scalars(
+            select(NotificationOutbox).where(NotificationOutbox.event_key == f"{case_id}:case_cancelled")
+        ).all()
+        assert len(notice_rows) == 2
+    client.close()
+    Base.metadata.drop_all(engine)
+    engine.dispose()

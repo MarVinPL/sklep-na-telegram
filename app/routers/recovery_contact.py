@@ -266,6 +266,9 @@ def recovery_contact_status(
     independence_active = (
         contact.independence_verified_at is not None
         and contact.independence_verifier_user_id is not None
+        and contact.independence_telegram_identity_hash == hashlib.sha256(
+            user.telegram_user_id.encode("utf-8")
+        ).hexdigest()
         and contact.independence_method is not None
         and contact.independence_audit_ref is not None
         and contact.independence_revoked_at is None

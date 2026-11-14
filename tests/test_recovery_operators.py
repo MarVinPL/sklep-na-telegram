@@ -131,6 +131,7 @@ def test_operator_cannot_decide_own_recovery_and_case_decision_is_unique(operato
             verified_at=datetime.now(UTC),
             independence_verified_at=datetime.now(UTC),
             independence_verifier_user_id=ids["verifier"],
+            independence_telegram_identity_hash=hashlib.sha256(b"target").hexdigest(),
             independence_method="independent_voice",
             independence_audit_ref="AUDIT-2026-TEST-002",
         ))

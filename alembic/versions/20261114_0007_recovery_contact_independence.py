@@ -17,6 +17,7 @@ depends_on = None
 def upgrade() -> None:
     op.add_column("recovery_contacts", sa.Column("independence_verified_at", sa.DateTime(timezone=True), nullable=True))
     op.add_column("recovery_contacts", sa.Column("independence_verifier_user_id", sa.Integer(), nullable=True))
+    op.add_column("recovery_contacts", sa.Column("independence_telegram_identity_hash", sa.String(length=64), nullable=True))
     op.add_column("recovery_contacts", sa.Column("independence_method", sa.String(length=32), nullable=True))
     op.add_column("recovery_contacts", sa.Column("independence_audit_ref", sa.String(length=128), nullable=True))
     op.add_column("recovery_contacts", sa.Column("independence_revoked_at", sa.DateTime(timezone=True), nullable=True))
@@ -37,5 +38,6 @@ def downgrade() -> None:
     op.drop_column("recovery_contacts", "independence_revoked_at")
     op.drop_column("recovery_contacts", "independence_audit_ref")
     op.drop_column("recovery_contacts", "independence_method")
+    op.drop_column("recovery_contacts", "independence_telegram_identity_hash")
     op.drop_column("recovery_contacts", "independence_verifier_user_id")
     op.drop_column("recovery_contacts", "independence_verified_at")

@@ -28,13 +28,14 @@ from app.core.config import get_settings
 from app.db import get_db
 from app.models import AuthSession, PasskeyCredential, User, WebAuthnChallenge
 from app.security.origins import require_allowed_origin
+from app.security.rate_limit import enforce_ip_rate_limit
 from app.security.sessions import require_session
 from app.security.telegram import verify_telegram_init_data
 
 router = APIRouter(
     prefix="/auth/passkeys",
     tags=["passkeys"],
-    dependencies=[Depends(require_allowed_origin)],
+    dependencies=[Depends(require_allowed_origin), Depends(enforce_ip_rate_limit)],
 )
 
 

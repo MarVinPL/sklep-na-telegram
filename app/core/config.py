@@ -2,7 +2,7 @@ import ipaddress
 from functools import lru_cache
 from urllib.parse import urlsplit
 
-from pydantic import model_validator
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -26,6 +26,10 @@ class Settings(BaseSettings):
     webauthn_challenge_ttl: int = 180
     auth_session_ttl: int = 86400
     auth_cookie_name: str = "shop_session"
+    auth_rate_limit_max_requests: int = Field(default=10, ge=1, le=1000)
+    auth_rate_limit_account_max_requests: int = Field(default=6, ge=1, le=1000)
+    auth_rate_limit_window_seconds: int = Field(default=60, ge=1, le=3600)
+    auth_rate_limit_retention_seconds: int = Field(default=86400, ge=3600, le=31536000)
 
     @property
     def allowed_origins(self) -> list[str]:

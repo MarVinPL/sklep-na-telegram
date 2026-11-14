@@ -65,3 +65,12 @@ class AuthSession(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC)
     )
+
+
+class AuthRateLimit(Base):
+    __tablename__ = "auth_rate_limits"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    bucket_key: Mapped[str] = mapped_column(String(64), unique=True)
+    window_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    request_count: Mapped[int] = mapped_column(Integer)

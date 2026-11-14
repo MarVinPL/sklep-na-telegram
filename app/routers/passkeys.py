@@ -263,7 +263,9 @@ def authentication_options(
         user_verification=UserVerificationRequirement.REQUIRED,
     )
     challenge_id = _new_challenge(db, user, "authentication", options.challenge, x_telegram_init_data)
-    return {"challenge_id": challenge_id, "publicKey": json.loads(options_to_json(options))}
+    public_key = json.loads(options_to_json(options))
+    public_key.pop("allowCredentials", None)
+    return {"challenge_id": challenge_id, "publicKey": public_key}
 
 
 @router.post("/authentication/verify")
@@ -457,7 +459,9 @@ def handoff_authentication_options(
     ))
     db.commit()
     logger.info("passkey_handoff event=challenge_issued user_id=%s", user_id)
-    return {"challenge_id": challenge_id, "publicKey": json.loads(options_to_json(options))}
+    public_key = json.loads(options_to_json(options))
+    public_key.pop("allowCredentials", None)
+    return {"challenge_id": challenge_id, "publicKey": public_key}
 
 
 @router.post("/handoff/authentication/verify")

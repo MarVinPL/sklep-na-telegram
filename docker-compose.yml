@@ -54,3 +54,12 @@ services:
 
 volumes:
   postgres_data:
+
+  notification-worker:
+    extends:
+      service: api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["python", "-m", "app.workers.recovery_notifications"]

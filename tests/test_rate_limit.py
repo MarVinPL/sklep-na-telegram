@@ -214,3 +214,52 @@ def test_invalid_telegram_context_is_still_covered_by_ip_bucket(
     assert rate_limit.enforce_ip_rate_limit(
         _request("/auth/passkeys/login", "invalid-init-data"), db
     ) is None
+
+
+def test_cleanup_removes_only_buckets_older_than_retention(
+    db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.security.rate_limit_maintenance import cleanup_expired_rate_limit_buckets
+
+    monkeypatch.setattr(
+        "app.security.rate_limit_maintenance.get_settings",
+        lambda: SimpleNamespace(auth_rate_limit_retention_seconds=86400),
+    )
+    now = datetime(2026, 11, 12, 12, 0, 15, tzinfo=UTC)
+    db.add_all(
+        [
+            AuthRateLimit(
+                bucket_key="a" * 64,
+                window_start=now - timedelta(days=2),
+                request_count=7,
+            ),
+            AuthRateLimit(
+                bucket_key="b" * 64,
+                window_start=now - timedelta(hours=1),
+                request_count=2,
+            ),
+        ]
+    )
+    db.commit()
+
+    deleted = cleanup_expired_rate_limit_buckets(
+        db, retention_seconds=86400, now=now
+    )
+
+    assert deleted == 1
+    remaining = db.scalars(select(AuthRateLimit)).all()
+    assert len(remaining) == 1
+    assert remaining[0].bucket_key == "b" * 64
+
+
+def test_cleanup_rejects_non_positive_retention(
+    db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.security.rate_limit_maintenance import cleanup_expired_rate_limit_buckets
+
+    monkeypatch.setattr(
+        "app.security.rate_limit_maintenance.get_settings",
+        lambda: SimpleNamespace(auth_rate_limit_retention_seconds=86400),
+    )
+    with pytest.raises(ValueError, match="retention_seconds must be positive"):
+        cleanup_expired_rate_limit_buckets(db, retention_seconds=0)

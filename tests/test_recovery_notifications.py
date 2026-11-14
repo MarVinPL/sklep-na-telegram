@@ -246,3 +246,48 @@ def test_worker_completes_hold_and_queues_end_notifications(monkeypatch):
         ).all()
         assert len(notices) == 2
     engine.dispose()
+
+
+
+def test_hold_waits_for_delayed_initial_security_notice(monkeypatch):
+    _configure_crypto(monkeypatch)
+    engine = _database()
+    monkeypatch.setattr(notifications, "_deliver", lambda db, row: None)
+    with Session(engine) as db:
+        case = _case(db)
+        for event, event_type in (
+            ("case_started", "recovery_case_started"),
+            ("contact_approved", "recovery_contact_approved"),
+            ("operator_approved", "recovery_operator_approved"),
+            ("hold_started", "recovery_hold_started"),
+        ):
+            notifications.queue_event(
+                db,
+                user_id=case.user_id,
+                event_key=f"{case.id}:{event}",
+                event_type=event_type,
+                email_subject="Security event",
+                email_body="Email",
+                telegram_body="Telegram",
+            )
+        db.flush()
+        delayed = db.scalar(
+            select(NotificationOutbox).where(
+                NotificationOutbox.event_key == f"{case.id}:case_started",
+                NotificationOutbox.channel == "telegram",
+            )
+        )
+        delayed.status = "retry"
+        delayed.next_attempt_at = datetime.now(UTC) + timedelta(hours=1)
+        db.commit()
+        assert notifications.dispatch_due_notifications(db) == 7
+        db.refresh(case)
+        assert case.status == "awaiting_notification_delivery"
+        assert case.hold_started_at is None
+        delayed.next_attempt_at = datetime.now(UTC) - timedelta(seconds=1)
+        db.commit()
+        assert notifications.dispatch_due_notifications(db) == 1
+        db.refresh(case)
+        assert case.status == "hold_active"
+        assert case.hold_started_at is not None
+    engine.dispose()

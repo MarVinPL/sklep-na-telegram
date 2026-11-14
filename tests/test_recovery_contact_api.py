@@ -17,7 +17,6 @@ from app.models import AuthRateLimit, AuthSession, PasskeyCredential, RecoveryCo
 from app.routers import recovery_contact
 from app.services import recovery_contact_crypto
 
-
 ORIGIN = "http://localhost:5173"
 INIT_DATA = "signed-original-telegram-init-data"
 SESSION_TOKEN = "test-session-token"

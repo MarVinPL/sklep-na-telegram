@@ -530,6 +530,7 @@ def redeem_handoff(
     identity = verify_telegram_init_data(x_telegram_init_data)
     token_hash = hashlib.sha256(payload.handoff_token.encode()).hexdigest()
     context_hash = hashlib.sha256(x_telegram_init_data.encode()).hexdigest()
+    now = datetime.now(UTC)
     handoff = db.scalar(
         select(PasskeyHandoff).where(
             PasskeyHandoff.token_hash == token_hash,

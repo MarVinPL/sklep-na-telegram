@@ -24,7 +24,6 @@ from app.services.recovery_contact_crypto import (
     encrypt_payload,
 )
 
-
 MAX_ATTEMPTS = 8
 RETRY_BASE_SECONDS = 30
 RETRY_MAX_SECONDS = 6 * 60 * 60

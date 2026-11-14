@@ -46,6 +46,12 @@ class ConfirmRequest(BaseModel):
     token: str = Field(min_length=32, max_length=128)
 
 
+def _is_unexpired(expires_at: datetime, now: datetime) -> bool:
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=UTC)
+    return expires_at > now
+
+
 def _authenticated_user(request: Request, db: Session, init_data: str) -> tuple[User, list[PasskeyCredential]]:
     identity = verify_telegram_init_data(init_data)
     session = require_session(request, db)
@@ -97,7 +103,7 @@ def registration_options(
     user, credentials = _authenticated_user(request, db, x_telegram_init_data)
     existing = db.get(RecoveryContact, user.id)
     if existing is not None and (
-        existing.verified_at is not None or existing.verification_expires_at > datetime.now(UTC)
+        existing.verified_at is not None or _is_unexpired(existing.verification_expires_at, datetime.now(UTC))
     ):
         raise HTTPException(status_code=409, detail="A recovery contact is already registered or pending")
     if existing is not None:
@@ -250,5 +256,5 @@ def recovery_contact_status(
     return {
         "configured": True,
         "verified": contact.verified_at is not None,
-        "verification_pending": contact.verified_at is None and contact.verification_expires_at > datetime.now(UTC),
+        "verification_pending": contact.verified_at is None and _is_unexpired(contact.verification_expires_at, datetime.now(UTC)),
     }

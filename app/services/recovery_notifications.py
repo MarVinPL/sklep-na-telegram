@@ -5,6 +5,8 @@ import urllib.request
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -45,23 +47,37 @@ def queue_event(
     }
     now = datetime.now(UTC)
     for channel, payload in payloads.items():
-        existing = db.scalar(
-            select(NotificationOutbox).where(
-                NotificationOutbox.event_key == event_key,
-                NotificationOutbox.channel == channel,
+        values = {
+            "event_key": event_key,
+            "user_id": user_id,
+            "channel": channel,
+            "event_type": event_type,
+            "encrypted_payload": encrypt_payload(json.dumps(payload, separators=(",", ":"))),
+            "status": "pending",
+            "attempt_count": 0,
+            "next_attempt_at": now,
+            "created_at": now,
+        }
+        dialect = db.get_bind().dialect.name
+        if dialect == "postgresql":
+            statement = pg_insert(NotificationOutbox).values(**values).on_conflict_do_nothing(
+                index_elements=["event_key", "channel"]
             )
-        )
-        if existing is None:
-            db.add(NotificationOutbox(
-                event_key=event_key,
-                user_id=user_id,
-                channel=channel,
-                event_type=event_type,
-                encrypted_payload=encrypt_payload(json.dumps(payload, separators=(",", ":"))),
-                status="pending",
-                attempt_count=0,
-                next_attempt_at=now,
-            ))
+            db.execute(statement)
+        elif dialect == "sqlite":
+            statement = sqlite_insert(NotificationOutbox).values(**values).on_conflict_do_nothing(
+                index_elements=["event_key", "channel"]
+            )
+            db.execute(statement)
+        else:
+            existing = db.scalar(
+                select(NotificationOutbox).where(
+                    NotificationOutbox.event_key == event_key,
+                    NotificationOutbox.channel == channel,
+                )
+            )
+            if existing is None:
+                db.add(NotificationOutbox(**values))
 
 
 def _send_telegram(chat_id: str, text: str) -> None:

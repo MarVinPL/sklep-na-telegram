@@ -124,9 +124,7 @@ def _deliver(db: Session, row: NotificationOutbox) -> None:
 
 
 def _maybe_start_hold(db: Session, event_key: str, now: datetime) -> None:
-    if not event_key.endswith(":hold_started"):
-        return
-    case_id = event_key.removesuffix(":hold_started")
+    case_id = event_key.split(":", 1)[0]
     case = db.scalar(select(RecoveryCase).where(RecoveryCase.id == case_id).with_for_update())
     if case is None or case.status != "awaiting_notification_delivery":
         return

@@ -101,7 +101,8 @@ def consume_account_rate_limit(
 
 def enforce_ip_rate_limit(request: Request, db: Session = Depends(get_db)) -> None:
     settings = get_settings()
-    scope = request.url.path
+    route = request.scope.get("route")
+    scope = getattr(route, "path", request.url.path)
     ip_count, ip_retry_after = consume_ip_rate_limit(
         db, client_ip=_client_ip(request), scope=scope
     )

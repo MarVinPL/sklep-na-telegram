@@ -441,6 +441,8 @@ def handoff_authentication_options(
         user_verification=UserVerificationRequirement.REQUIRED,
     )
     now = datetime.now(UTC)
+    if handoff_expires_at.tzinfo is None:
+        handoff_expires_at = handoff_expires_at.replace(tzinfo=UTC)
     challenge_id = str(uuid.uuid4())
     db.add(WebAuthnChallenge(
         id=challenge_id,

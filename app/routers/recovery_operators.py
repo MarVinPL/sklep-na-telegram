@@ -95,8 +95,15 @@ def request_operator_change(
         expires_at=datetime.now(UTC) + timedelta(hours=24),
     )
     db.add(change)
+    db.flush()
+    db.add(OperatorChangeApproval(
+        request_id=change.id,
+        approver_user_id=requester.id,
+        decision="approve",
+        reason=payload.reason.strip(),
+    ))
     db.commit()
-    return {"request_id": change.id, "status": change.status, "approvals_required": 2}
+    return {"request_id": change.id, "status": change.status, "approvals_required": 2, "approvals_recorded": 1}
 
 
 @router.post("/changes/{request_id}/approval")

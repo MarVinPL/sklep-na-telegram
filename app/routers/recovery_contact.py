@@ -33,7 +33,7 @@ router = APIRouter(
     dependencies=[Depends(require_allowed_origin), Depends(enforce_ip_rate_limit)],
 )
 
-_EMAIL_RE = re.compile(r"^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$")
+_EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 
 
 class EnrollmentVerifyRequest(BaseModel):

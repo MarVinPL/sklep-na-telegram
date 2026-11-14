@@ -12,7 +12,7 @@ Issue #30 implements only initial enrollment and verification of an independent 
 - The encryption key is configured outside source control using RECOVERY_CONTACT_ENCRYPTION_KEY. Generate a Fernet key with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())" and store it only in the deployment secret environment.
 - A random one-use verification token is stored only as SHA-256 hash and sent using the optional operator-configured SMTP transport. It expires after 15 minutes.
 - SMTP submission is not proof of mailbox ownership; only confirmation with the one-use token marks the contact verified.
-- The mailbox must be independently controlled and not merely another identifier or recovery channel for the Telegram account. SMS-only contacts are not accepted.
+- The mailbox must be independently controlled and not merely another identifier or recovery channel for the Telegram account. SMS-only contacts are not accepted. The service proves mailbox possession only; it cannot technically infer whether the mailbox is controlled independently of Telegram, so that independence remains a policy and review requirement.
 - The API reveals only configured/verified status, never the email address or token.
 
 ## Deliberate limitations

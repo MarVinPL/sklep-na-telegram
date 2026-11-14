@@ -360,6 +360,9 @@ def record_recovery_operator_decision(
         contact is None
         or contact.verified_at is None
         or contact.independence_verified_at is None
+        or contact.independence_telegram_identity_hash != hashlib.sha256(
+            recovery_user.telegram_user_id.encode("utf-8")
+        ).hexdigest()
         or contact.independence_revoked_at is not None
     ):
         raise HTTPException(status_code=409, detail="A separately attested independent recovery contact is required")

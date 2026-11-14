@@ -241,8 +241,8 @@ export default function App() {
 
       {handoffPage && handoffComplete && (
         <section className="notice">
-          <strong>Logowanie zakończone</strong>
-          <p>Sesja została utworzona. Możesz wrócić do Telegrama.</p>
+          <strong>Passkey potwierdzony</strong>
+          <p>Wróć do Telegrama i wybierz „Sprawdź status logowania”, aby utworzyć sesję w Mini App.</p>
         </section>
       )}
 

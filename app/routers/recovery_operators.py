@@ -11,6 +11,7 @@ from app.db import get_db
 from app.models import (
     OperatorChangeApproval,
     OperatorChangeRequest,
+    RecoveryCase,
     RecoveryContact,
     RecoveryOperatorDecision,
     SecurityOperator,
@@ -20,6 +21,7 @@ from app.security.origins import require_allowed_origin
 from app.security.rate_limit import enforce_ip_rate_limit
 from app.security.sessions import require_session
 from app.security.telegram import verify_telegram_init_data
+from app.services.recovery_notifications import queue_event
 
 router = APIRouter(
     prefix="/auth/passkeys/recovery-operators",
@@ -266,6 +268,15 @@ def record_recovery_operator_decision(
     contact = db.get(RecoveryContact, recovery_user.id)
     if contact is None or contact.verified_at is None:
         raise HTTPException(status_code=409, detail="A verified recovery contact is required")
+    case = db.scalar(
+        select(RecoveryCase)
+        .where(RecoveryCase.id == normalized_case_id, RecoveryCase.user_id == recovery_user.id)
+        .with_for_update()
+    )
+    if case is None:
+        raise HTTPException(status_code=404, detail="Recovery case not found")
+    if case.status != "awaiting_approvals" or case.vetoed_at is not None:
+        raise HTTPException(status_code=409, detail="Recovery case is not accepting operator decisions")
     db.add(RecoveryOperatorDecision(
         case_id=normalized_case_id,
         recovery_user_id=recovery_user.id,
@@ -273,9 +284,50 @@ def record_recovery_operator_decision(
         decision=payload.decision,
         reason=payload.reason.strip(),
     ))
+    now = datetime.now(UTC)
+    if payload.decision == "reject":
+        case.status = "manual_review"
+        case.updated_at = now
+        event_type = "operator_rejected"
+        email_subject = "Operator bezpieczeństwa odrzucił wniosek recovery"
+        email_body = f"Operator bezpieczeństwa skierował sprawę {case.id} do ręcznej analizy. Nie wydano tokenu."
+        telegram_body = "Operator bezpieczeństwa skierował wniosek odzyskiwania do ręcznej analizy."
+    else:
+        case.operator_approved_at = now
+        case.updated_at = now
+        event_type = "operator_approved"
+        email_subject = "Operator bezpieczeństwa zatwierdził wniosek recovery"
+        email_body = f"Operator bezpieczeństwa zatwierdził sprawę {case.id}. Oczekiwana jest niezależna akceptacja kontaktu."
+        telegram_body = "Operator bezpieczeństwa zatwierdził wniosek. Sprawa oczekuje na niezależny kontakt."
+    queue_event(
+        db,
+        user_id=recovery_user.id,
+        event_key=f"{case.id}:{event_type}",
+        event_type=f"recovery_{event_type}",
+        email_subject=email_subject,
+        email_body=email_body,
+        telegram_body=telegram_body,
+    )
+    if payload.decision == "approve" and case.contact_approved_at is not None:
+        case.status = "awaiting_notification_delivery"
+        queue_event(
+            db,
+            user_id=recovery_user.id,
+            event_key=f"{case.id}:hold_started",
+            event_type="recovery_hold_started",
+            email_subject="Rozpoczyna się 24-godzinny okres ochronny",
+            email_body=(
+                f"Obie niezależne akceptacje są zapisane dla sprawy {case.id}. "
+                "Okres ochronny rozpocznie się dopiero po potwierdzeniu dostarczenia obu kanałów."
+            ),
+            telegram_body=(
+                "Obie niezależne akceptacje są zapisane. Okres ochronny rozpocznie się "
+                "po dostarczeniu powiadomień na oba kanały."
+            ),
+        )
     try:
         db.commit()
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=409, detail="Operator already decided this recovery case") from None
-    return {"recorded": True, "decision": payload.decision}
+    return {"recorded": True, "decision": payload.decision, "status": case.status}

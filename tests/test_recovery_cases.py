@@ -196,3 +196,23 @@ def test_mailbox_verification_without_independence_attestation_is_blocked(monkey
     client.close()
     Base.metadata.drop_all(engine)
     engine.dispose()
+
+
+
+def test_telegram_identity_change_invalidates_contact_attestation(monkeypatch):
+    engine, factory, client = _make_client(monkeypatch)
+    _seed_recovery_user(factory)
+    with factory() as db:
+        user = db.scalar(select(User).where(User.telegram_user_id == "recover-me"))
+        user.telegram_user_id = "recover-me-new-identity"
+        db.commit()
+    response = client.post(
+        "/auth/passkeys/recovery/cases",
+        headers={"Origin": ORIGIN, "X-Telegram-Init-Data": "recover-me-new-identity"},
+    )
+    assert response.status_code == 409
+    with factory() as db:
+        assert db.scalar(select(RecoveryCase)) is None
+    client.close()
+    Base.metadata.drop_all(engine)
+    engine.dispose()

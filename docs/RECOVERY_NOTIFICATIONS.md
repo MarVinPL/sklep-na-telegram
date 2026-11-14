@@ -5,7 +5,7 @@
 1. A recovery request is started with verified Telegram initData. Telegram is only a case-start signal; it is not proof of identity and does not create a session.
 2. A previously enrolled, verified recovery contact receives a short-lived (15-minute), single-use approval token. A separate veto token is delivered for the protective period.
 3. An active security operator records an independent approve/reject decision. The operator must not be the recovery account.
-4. The 24-hour hold is eligible only after both approvals. A hold_started event is queued to email and Telegram. The hold clock starts only after both required channel deliveries have been accepted.
+4. The 24-hour hold is eligible only after both approvals. The case-start, contact-approval, operator-approval and hold-start events must all be accepted on both email and Telegram. A delayed or failed critical notice prevents the hold clock from starting.
 5. The recovery contact can veto before or during the hold. Veto changes the case to manual_review and blocks automatic progression. There is no override endpoint.
 6. The account can cancel its own request before finalization. An unapproved contact token expires after 15 minutes and the worker marks the case expired with notifications.
 7. After the hold, the case becomes hold_complete_pending_review. This PR deliberately does not issue a token, create a session, revoke credentials, or activate recovery.

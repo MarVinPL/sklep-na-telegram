@@ -163,3 +163,54 @@ class RecoveryOperatorDecision(Base):
     decision: Mapped[str] = mapped_column(String(16))
     reason: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+
+
+
+class RecoveryCase(Base):
+    __tablename__ = "recovery_cases"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), index=True)
+    status: Mapped[str] = mapped_column(String(32), default="awaiting_approvals", index=True)
+    contact_approval_token_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    contact_approval_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    contact_approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    veto_token_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    veto_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    vetoed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    veto_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    operator_approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    hold_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    hold_ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+
+
+class NotificationOutbox(Base):
+    __tablename__ = "notification_outbox"
+    __table_args__ = (UniqueConstraint("event_key", "channel", name="uq_notification_event_channel"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    event_key: Mapped[str] = mapped_column(String(128))
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), index=True)
+    channel: Mapped[str] = mapped_column(String(16))
+    event_type: Mapped[str] = mapped_column(String(48))
+    encrypted_payload: Mapped[bytes] = mapped_column(LargeBinary)
+    status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0)
+    next_attempt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    last_error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class NotificationAttempt(Base):
+    __tablename__ = "notification_attempts"
+    __table_args__ = (UniqueConstraint("outbox_id", "attempt_number", name="uq_notification_attempt_number"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    outbox_id: Mapped[int] = mapped_column(ForeignKey("notification_outbox.id", ondelete="CASCADE"), index=True)
+    attempt_number: Mapped[int] = mapped_column(Integer)
+    outcome: Mapped[str] = mapped_column(String(16))
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))

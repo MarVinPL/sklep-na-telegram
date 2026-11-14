@@ -93,6 +93,8 @@ export default function App() {
       setHandoffComplete(true);
       setMessage("Passkey potwierdzony. Wróć do Telegrama i wybierz „Sprawdź status logowania”.");
     } catch (error) {
+      // The ticket is single-use; restart from Telegram after any failed attempt.
+      setHandoffTicket(null);
       setMessage(error instanceof Error ? error.message : "Nie udało się dokończyć logowania Passkey.");
     } finally {
       setBusy(false);

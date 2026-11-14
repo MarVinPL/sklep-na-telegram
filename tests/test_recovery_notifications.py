@@ -77,17 +77,23 @@ def test_hold_starts_only_after_both_channels_are_delivered(monkeypatch):
     monkeypatch.setattr(notifications, "_deliver", lambda db, row: None)
     with Session(engine) as db:
         case = _case(db)
-        notifications.queue_event(
-            db,
-            user_id=case.user_id,
-            event_key=f"{case.id}:hold_started",
-            event_type="recovery_hold_started",
-            email_subject="Hold",
-            email_body="Email",
-            telegram_body="Telegram",
-        )
+        for event, event_type in (
+            ("case_started", "recovery_case_started"),
+            ("contact_approved", "recovery_contact_approved"),
+            ("operator_approved", "recovery_operator_approved"),
+            ("hold_started", "recovery_hold_started"),
+        ):
+            notifications.queue_event(
+                db,
+                user_id=case.user_id,
+                event_key=f"{case.id}:{event}",
+                event_type=event_type,
+                email_subject="Security event",
+                email_body="Email",
+                telegram_body="Telegram",
+            )
         db.commit()
-        assert notifications.dispatch_due_notifications(db) == 2
+        assert notifications.dispatch_due_notifications(db) == 8
         db.refresh(case)
         assert case.status == "hold_active"
         assert case.hold_started_at is not None

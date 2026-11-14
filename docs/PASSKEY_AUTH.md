@@ -110,3 +110,16 @@ Lokalny przykład dopuszcza `http://localhost:5173` (Vite) oraz `http://localhos
 Polityka backendu to jedna aktywna sesja aplikacyjna na użytkownika. Po poprawnym logowaniu wcześniejsze aktywne sesje są unieważniane w tej samej transakcji, w której powstaje nowa sesja. Unieważnienie Passkey unieważnia również sesje użytkownika. Tworzenie użytkownika obsługuje wyścig równoległych pierwszych żądań przez ponowne odczytanie rekordu po konflikcie unikalności Telegram ID.
 
 CI uruchamia dodatkowo testy współbieżnego zużycia tego samego challenge i tworzenia użytkownika na PostgreSQL 16. Testy SQLite nie zastępują tych testów, ponieważ SQLite nie zapewnia semantyki blokad wierszy PostgreSQL.
+
+
+## Pierwszy klient Mini App
+
+Frontend React + TypeScript w katalogu `miniapp/` obsługuje bezpośrednie endpointy backendu:
+- rejestrację przez `navigator.credentials.create()`;
+- logowanie przez `navigator.credentials.get()`;
+- listę i unieważnianie Passkeys;
+- wylogowanie.
+
+Klient przekazuje Telegram `initData` wyłącznie w nagłówku `X-Telegram-Init-Data`, a cookie sesyjne przez `credentials: include`. Nie zapisuje tokenów sesyjnych w JavaScript i nie oferuje PIN-u.
+
+Handoff do zewnętrznej przeglądarki celowo nie jest częścią tego PR. Wymaga osobnych endpointów backendowych, atomowego zużycia biletów i testów na rzeczywistych klientach Telegram. Nie należy pokazywać przycisku handoff, dopóki zależny backend nie zostanie scalony i zweryfikowany.

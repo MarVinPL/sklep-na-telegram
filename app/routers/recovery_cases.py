@@ -42,11 +42,19 @@ def _aware(value: datetime) -> datetime:
 
 def _has_valid_independence_attestation(db: Session, user_id: int) -> bool:
     contact = db.get(RecoveryContact, user_id)
+    user = db.get(User, user_id)
+    identity_hash = (
+        hashlib.sha256(user.telegram_user_id.encode("utf-8")).hexdigest()
+        if user is not None
+        else None
+    )
     return bool(
         contact is not None
+        and user is not None
         and contact.verified_at is not None
         and contact.independence_verified_at is not None
         and contact.independence_verifier_user_id is not None
+        and contact.independence_telegram_identity_hash == identity_hash
         and contact.independence_method
         and contact.independence_audit_ref
         and contact.independence_revoked_at is None

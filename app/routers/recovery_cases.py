@@ -81,7 +81,7 @@ def start_recovery_case(
             RecoveryCase.user_id == user.id,
             RecoveryCase.status.in_({
                 "awaiting_approvals", "awaiting_notification_delivery",
-                "hold_active", "notification_blocked", "manual_review",
+                "hold_active", "hold_complete_pending_review", "notification_blocked", "manual_review",
             }),
         )
     )

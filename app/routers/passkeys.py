@@ -432,7 +432,7 @@ def handoff_authentication_options(
     payload: HandoffOptionsRequest,
     db: Session = Depends(get_db),
 ) -> dict:
-    handoff_id, user_id, context_hash, handoff_expires_at = _consume_handoff(
+    _handoff_id, user_id, context_hash, handoff_expires_at = _consume_handoff(
         db, payload.handoff_token
     )
     settings = get_settings()

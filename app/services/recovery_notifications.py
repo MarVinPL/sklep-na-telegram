@@ -169,7 +169,9 @@ def dispatch_due_notifications(db: Session, *, limit: int = 25) -> int:
             if row.status == "dead" and row.event_type.startswith("recovery_"):
                 case_id = row.event_key.split(":", 1)[0]
                 case = db.scalar(select(RecoveryCase).where(RecoveryCase.id == case_id).with_for_update())
-                if case is not None and case.status not in {"vetoed", "hold_complete_pending_review"}:
+                if case is not None and case.status not in {
+                    "vetoed", "manual_review", "cancelled", "expired", "hold_complete_pending_review",
+                }:
                     case.status = "notification_blocked"
                     case.updated_at = now
             continue

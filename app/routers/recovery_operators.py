@@ -49,6 +49,16 @@ class CaseDecisionBody(BaseModel):
     reason: str = Field(min_length=12, max_length=1000)
 
 
+class ContactIndependenceBody(BaseModel):
+    method: str = Field(pattern="^(in_person|independent_voice|independent_video|documented_third_party)$")
+    audit_reference: str = Field(min_length=8, max_length=128, pattern="^[A-Za-z0-9._:/-]+$")
+    reason: str = Field(min_length=20, max_length=500)
+
+
+class ContactIndependenceRevocationBody(BaseModel):
+    reason: str = Field(min_length=12, max_length=500)
+
+
 def _current_user(request: Request, db: Session, init_data: str) -> User:
     identity = verify_telegram_init_data(init_data)
     session = require_session(request, db)
@@ -248,6 +258,63 @@ def approve_operator_change(
     return {"status": change.status, "approvals": approvals, "approvals_required": 2}
 
 
+
+
+@router.post("/contacts/{recovery_telegram_user_id}/independence")
+def attest_recovery_contact_independence(
+    recovery_telegram_user_id: str,
+    payload: ContactIndependenceBody,
+    request: Request,
+    x_telegram_init_data: str = Header(..., alias="X-Telegram-Init-Data"),
+    db: Session = Depends(get_db),
+) -> dict:
+    verifier = _current_user(request, db, x_telegram_init_data)
+    _require_operator(db, verifier.id)
+    recovery_user = db.scalar(
+        select(User).where(User.telegram_user_id == recovery_telegram_user_id).with_for_update()
+    )
+    if recovery_user is None:
+        raise HTTPException(status_code=404, detail="Recovery account not found")
+    if recovery_user.id == verifier.id:
+        raise HTTPException(status_code=403, detail="Verifier and recovery account must be different principals")
+    contact = db.get(RecoveryContact, recovery_user.id)
+    if contact is None or contact.verified_at is None:
+        raise HTTPException(status_code=409, detail="Mailbox verification is required before independence review")
+    if contact.independence_verified_at is not None and contact.independence_revoked_at is None:
+        raise HTTPException(status_code=409, detail="Contact independence is already attested")
+    contact.independence_verified_at = datetime.now(UTC)
+    contact.independence_verifier_user_id = verifier.id
+    contact.independence_method = payload.method
+    contact.independence_audit_ref = payload.audit_reference
+    contact.independence_revoked_at = None
+    contact.independence_revocation_reason = None
+    db.commit()
+    return {"attested": True, "mailbox_verified": True, "independence_verified": True}
+
+
+@router.post("/contacts/{recovery_telegram_user_id}/independence/revoke")
+def revoke_recovery_contact_independence(
+    recovery_telegram_user_id: str,
+    payload: ContactIndependenceRevocationBody,
+    request: Request,
+    x_telegram_init_data: str = Header(..., alias="X-Telegram-Init-Data"),
+    db: Session = Depends(get_db),
+) -> dict:
+    operator = _current_user(request, db, x_telegram_init_data)
+    _require_operator(db, operator.id)
+    recovery_user = db.scalar(
+        select(User).where(User.telegram_user_id == recovery_telegram_user_id).with_for_update()
+    )
+    if recovery_user is None:
+        raise HTTPException(status_code=404, detail="Recovery account not found")
+    contact = db.get(RecoveryContact, recovery_user.id)
+    if contact is None or contact.independence_verified_at is None or contact.independence_revoked_at is not None:
+        raise HTTPException(status_code=409, detail="No active independence attestation exists")
+    contact.independence_revoked_at = datetime.now(UTC)
+    contact.independence_revocation_reason = payload.reason.strip()
+    db.commit()
+    return {"revoked": True, "independence_verified": False}
+
 @router.post("/cases/{case_id}/decision")
 def record_recovery_operator_decision(
     case_id: str,
@@ -268,8 +335,15 @@ def record_recovery_operator_decision(
     if recovery_user.id == operator.id:
         raise HTTPException(status_code=403, detail="Recovery contact and security operator must be different principals")
     contact = db.get(RecoveryContact, recovery_user.id)
-    if contact is None or contact.verified_at is None:
-        raise HTTPException(status_code=409, detail="A verified recovery contact is required")
+    if (
+        contact is None
+        or contact.verified_at is None
+        or contact.independence_verified_at is None
+        or contact.independence_revoked_at is not None
+    ):
+        raise HTTPException(status_code=409, detail="A separately attested independent recovery contact is required")
+    if contact.independence_verifier_user_id == operator.id:
+        raise HTTPException(status_code=403, detail="The independence verifier cannot approve the same recovery case")
     case = db.scalar(
         select(RecoveryCase)
         .where(RecoveryCase.id == normalized_case_id, RecoveryCase.user_id == recovery_user.id)

@@ -97,6 +97,19 @@ def _consume_challenge(
     return row.challenge
 
 
+def _revoke_user_sessions(db: Session, user_id: int, revoked_at: datetime | None = None) -> int:
+    now = revoked_at or datetime.now(UTC)
+    active_sessions = db.scalars(
+        select(AuthSession).where(
+            AuthSession.user_id == user_id,
+            AuthSession.revoked_at.is_(None),
+        )
+    ).all()
+    for active_session in active_sessions:
+        active_session.revoked_at = now
+    return len(active_sessions)
+
+
 def _session_cookie(
     db: Session, user: User, response: Response, request: Request | None = None
 ) -> None:
@@ -338,16 +351,9 @@ def revoke_passkey(
         )
     now = datetime.now(UTC)
     credential.revoked_at = now
-    active_sessions = db.scalars(
-        select(AuthSession).where(
-            AuthSession.user_id == user.id,
-            AuthSession.revoked_at.is_(None),
-        )
-    ).all()
-    for active_session in active_sessions:
-        active_session.revoked_at = now
+    sessions_revoked = _revoke_user_sessions(db, user.id, now)
     db.commit()
-    return {"revoked": True, "sessions_revoked": len(active_sessions)}
+    return {"revoked": True, "sessions_revoked": sessions_revoked}
 
 
 @router.get("")

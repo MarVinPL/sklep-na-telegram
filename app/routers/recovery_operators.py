@@ -281,13 +281,18 @@ def attest_recovery_contact_independence(
     contact = db.get(RecoveryContact, recovery_user.id)
     if contact is None or contact.verified_at is None:
         raise HTTPException(status_code=409, detail="Mailbox verification is required before independence review")
-    if contact.independence_verified_at is not None and contact.independence_revoked_at is None:
+    current_identity_hash = hashlib.sha256(recovery_user.telegram_user_id.encode("utf-8")).hexdigest()
+    if (
+        contact.independence_verified_at is not None
+        and contact.independence_revoked_at is None
+        and contact.independence_telegram_identity_hash == current_identity_hash
+    ):
         raise HTTPException(status_code=409, detail="Contact independence is already attested")
+    if contact.independence_verifier_user_id == verifier.id:
+        raise HTTPException(status_code=403, detail="A previous verifier cannot re-attest a revoked or stale contact")
     contact.independence_verified_at = datetime.now(UTC)
     contact.independence_verifier_user_id = verifier.id
-    contact.independence_telegram_identity_hash = hashlib.sha256(
-        recovery_user.telegram_user_id.encode("utf-8")
-    ).hexdigest()
+    contact.independence_telegram_identity_hash = current_identity_hash
     contact.independence_method = payload.method
     contact.independence_audit_ref = payload.audit_reference
     contact.independence_revoked_at = None

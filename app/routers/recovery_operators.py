@@ -54,6 +54,12 @@ def _current_user(request: Request, db: Session, init_data: str) -> User:
     return user
 
 
+def _is_unexpired(expires_at: datetime, now: datetime) -> bool:
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=UTC)
+    return expires_at > now
+
+
 def _require_operator(db: Session, user_id: int) -> SecurityOperator:
     operator = db.scalar(
         select(SecurityOperator).where(
@@ -122,8 +128,19 @@ def approve_operator_change(
         .with_for_update()
     )
     now = datetime.now(UTC)
-    if change is None or change.status != "pending" or change.expires_at <= now:
+    if change is None or change.status != "pending" or not _is_unexpired(change.expires_at, now):
         raise HTTPException(status_code=409, detail="Operator change request is unavailable")
+    requester_operator = db.scalar(
+        select(SecurityOperator).where(
+            SecurityOperator.user_id == change.requested_by_user_id,
+            SecurityOperator.revoked_at.is_(None),
+        )
+    )
+    if requester_operator is None:
+        change.status = "cancelled"
+        change.decided_at = now
+        db.commit()
+        raise HTTPException(status_code=409, detail="Requesting operator is no longer active")
     if approver.id in {change.requested_by_user_id, change.target_user_id}:
         raise HTTPException(status_code=403, detail="Requester and target cannot approve this change")
     existing = db.scalar(

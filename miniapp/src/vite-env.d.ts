@@ -4,6 +4,7 @@ interface TelegramWebApp {
   initData: string;
   ready(): void;
   expand(): void;
+  openLink?(url: string): void;
   colorScheme?: "light" | "dark";
 }
 

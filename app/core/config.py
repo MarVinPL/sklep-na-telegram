@@ -7,7 +7,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
     app_name: str = "Sklep na Telegram"
     app_env: str = "development"
@@ -38,7 +42,9 @@ class Settings(BaseSettings):
 
     @property
     def allowed_origins(self) -> list[str]:
-        configured = [item.strip() for item in self.cors_allowed_origins.split(",") if item.strip()]
+        configured = [
+            item.strip() for item in self.cors_allowed_origins.split(",") if item.strip()
+        ]
         return configured or [self.webauthn_origin]
 
     @model_validator(mode="after")
@@ -50,6 +56,9 @@ class Settings(BaseSettings):
             raise ValueError("SMTP_USERNAME and SMTP_PASSWORD must be configured together")
         if self.smtp_ssl and self.smtp_starttls:
             raise ValueError("SMTP_SSL and SMTP_STARTTLS cannot both be enabled")
+        if self.app_env.lower() == "production" and configured:
+            if not (self.smtp_ssl or self.smtp_starttls):
+                raise ValueError("Production SMTP requires TLS")
         return self
 
     @model_validator(mode="after")
@@ -60,6 +69,7 @@ class Settings(BaseSettings):
             raise ValueError("WebAuthn challenge and auth session TTLs must be positive")
         if not self.auth_cookie_name.strip():
             raise ValueError("AUTH_COOKIE_NAME must not be empty")
+
         if self.app_env.lower() != "production":
             return self
 
@@ -82,8 +92,13 @@ class Settings(BaseSettings):
         origin = urlsplit(self.webauthn_origin)
         origin_host = (origin.hostname or "").lower().rstrip(".")
         if (
-            origin.scheme != "https" or not origin_host or origin.username is not None
-            or origin.password is not None or origin.path != "" or origin.query or origin.fragment
+            origin.scheme != "https"
+            or not origin_host
+            or origin.username is not None
+            or origin.password is not None
+            or origin.path != ""
+            or origin.query
+            or origin.fragment
         ):
             raise ValueError("Production WEBAUTHN_ORIGIN must be a bare HTTPS origin")
         if origin_host != rp_id and not origin_host.endswith(f".{rp_id}"):
@@ -93,13 +108,19 @@ class Settings(BaseSettings):
             parsed = urlsplit(allowed_origin)
             host = (parsed.hostname or "").lower().rstrip(".")
             if (
-                parsed.scheme != "https" or not host or "*" in host
-                or parsed.username is not None or parsed.password is not None
-                or parsed.path != "" or parsed.query or parsed.fragment
+                parsed.scheme != "https"
+                or not host
+                or "*" in host
+                or parsed.username is not None
+                or parsed.password is not None
+                or parsed.path != ""
+                or parsed.query
+                or parsed.fragment
             ):
                 raise ValueError("CORS_ALLOWED_ORIGINS must contain exact HTTPS origins")
             if host != rp_id and not host.endswith(f".{rp_id}"):
                 raise ValueError("Each CORS origin host must match WEBAUTHN_RP_ID")
+
         return self
 
 

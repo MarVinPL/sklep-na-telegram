@@ -64,7 +64,7 @@ def seed(factory, *telegram_ids: str) -> dict[str, int]:
             result[telegram_id] = user.id
             db.add(AuthSession(
                 user_id=user.id,
-                token_hash=hashlib.sha256(SESSION.encode()).hexdigest(),
+                token_hash=hashlib.sha256(f"{SESSION}-{telegram_id}".encode()).hexdigest(),
                 expires_at=datetime.now(UTC) + timedelta(hours=1),
             ))
         db.commit()
@@ -74,7 +74,7 @@ def seed(factory, *telegram_ids: str) -> dict[str, int]:
 def test_tenant_user_cannot_request_operator_change(operator_client):
     client, factory = operator_client
     seed(factory, "requester", "target")
-    client.cookies.set("shop_session", SESSION)
+    client.cookies.set("shop_session", f"{SESSION}-requester")
     response = client.post(
         "/auth/passkeys/recovery-operators/changes",
         headers={"Origin": ORIGIN, "X-Telegram-Init-Data": "requester"},
@@ -90,7 +90,7 @@ def test_operator_change_requires_two_distinct_approvals(operator_client):
         db.add(SecurityOperator(user_id=ids["requester"], grant_reason="bootstrap"))
         db.add(SecurityOperator(user_id=ids["operator-b"], grant_reason="bootstrap"))
         db.commit()
-    client.cookies.set("shop_session", SESSION)
+    client.cookies.set("shop_session", f"{SESSION}-requester")
     created = client.post(
         "/auth/passkeys/recovery-operators/changes",
         headers={"Origin": ORIGIN, "X-Telegram-Init-Data": "requester"},
@@ -100,6 +100,7 @@ def test_operator_change_requires_two_distinct_approvals(operator_client):
     assert created.json()["approvals_recorded"] == 1
     request_id = created.json()["request_id"]
 
+    client.cookies.set("shop_session", f"{SESSION}-operator-b")
     second = client.post(
         f"/auth/passkeys/recovery-operators/changes/{request_id}/approval",
         headers={"Origin": ORIGIN, "X-Telegram-Init-Data": "operator-b"},
@@ -122,7 +123,7 @@ def test_operator_cannot_decide_own_recovery_and_case_decision_is_unique(operato
             verified_at=datetime.now(UTC),
         ))
         db.commit()
-    client.cookies.set("shop_session", SESSION)
+    client.cookies.set("shop_session", f"{SESSION}-operator")
     path = "/auth/passkeys/recovery-operators/cases/7b4b1d6e-9d6f-4e91-8c27-9b35b8f53e2a/decision"
     body = {"recovery_telegram_user_id": "target", "decision": "approve", "reason": "Reviewed independent evidence"}
     headers = {"Origin": ORIGIN, "X-Telegram-Init-Data": "operator"}

@@ -205,3 +205,19 @@ def test_expired_contact_approval_closes_case_and_queues_notice(monkeypatch):
         ).all()
         assert len(notices) == 2
     engine.dispose()
+
+
+
+def test_stalled_operator_approval_expires_after_seven_days(monkeypatch):
+    _configure_crypto(monkeypatch)
+    engine = _database()
+    with Session(engine) as db:
+        case = _case(db, status="awaiting_approvals")
+        case.contact_approved_at = datetime.now(UTC) - timedelta(days=8)
+        case.created_at = datetime.now(UTC) - timedelta(days=8)
+        case.contact_approval_expires_at = datetime.now(UTC) - timedelta(days=8)
+        assert notifications.expire_due_recovery_cases(db) == 1
+        db.refresh(case)
+        assert case.status == "expired"
+        assert case.veto_token_hash is None
+    engine.dispose()

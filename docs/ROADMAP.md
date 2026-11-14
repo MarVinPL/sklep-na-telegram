@@ -12,6 +12,7 @@
 - [ ] Szkielet FastAPI, konfiguracja i health checks.
 - [ ] SQLAlchemy, Alembic i modele User/Shop/Membership.
 - [ ] Walidacja Telegram Mini App initData.
+- [ ] Passkey (WebAuthn) jako metoda logowania do Mini App — bez fallbacku PIN.
 - [ ] RBAC i testy izolacji między sklepami.
 
 ## Etap 3 — bot i Mini App

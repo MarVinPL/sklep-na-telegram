@@ -2,7 +2,7 @@
 
 Uniwersalna, otwartoźródłowa platforma sklepowa działająca w Telegramie. Jeden backend obsługuje wiele niezależnych sklepów (multi-tenant), a klienci i administratorzy korzystają z bota Telegram oraz Telegram Mini App.
 
-> **Status: fundament projektu / etap 1.** Repozytorium zawiera dokumentację architektury i bezpieczną bazę konfiguracji. Nie jest to jeszcze gotowy system sprzedażowy ani wdrożenie produkcyjne.
+> **Status: wczesny development.** Dostępne są dokumentacja, lokalny PostgreSQL i minimalne API FastAPI z endpointem health check. To nie jest jeszcze gotowy system sprzedażowy ani wdrożenie produkcyjne.
 
 ## Założenia
 
@@ -28,7 +28,7 @@ Uniwersalna, otwartoźródłowa platforma sklepowa działająca w Telegramie. Je
 3. Uzupełnij pozostałe lokalne wartości konfiguracyjne.
 4. Uruchom `docker compose up -d`.
 
-Compose na tym etapie uruchamia wyłącznie bazę PostgreSQL. API, bot i Mini App zostaną dodane w kolejnych etapach; nie należy traktować tego kroku jako uruchomienia sklepu.
+Compose na tym etapie uruchamia PostgreSQL i minimalne API FastAPI. Bot i Mini App zostaną dodane w kolejnych etapach; nie należy traktować tego kroku jako uruchomienia sklepu.
 
 ## Dokumentacja
 
@@ -36,6 +36,7 @@ Compose na tym etapie uruchamia wyłącznie bazę PostgreSQL. API, bot i Mini Ap
 - [Model danych](docs/DATA_MODEL.md)
 - [Bezpieczeństwo i izolacja tenantów](docs/SECURITY.md)
 - [Plan rozwoju](docs/ROADMAP.md)
+- [Logowanie Passkey do Mini App](docs/PASSKEY_AUTH.md)
 
 ## Płatności
 

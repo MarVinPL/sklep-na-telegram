@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
 from app.routers.passkeys import router as passkeys_router
@@ -11,6 +12,14 @@ def create_app() -> FastAPI:
         version="0.2.0",
         docs_url="/docs" if settings.app_env != "production" else None,
         redoc_url=None,
+    )
+    application.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.allowed_origins,
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_headers=["Content-Type", "X-Telegram-Init-Data"],
+        max_age=600,
     )
 
     @application.get("/healthz", tags=["health"])

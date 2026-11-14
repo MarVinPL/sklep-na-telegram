@@ -91,3 +91,16 @@ Każdy etap ceremonii wymaga zweryfikowanego nagłówka `X-Telegram-Init-Data`. 
 To nadal nie jest kompletna funkcja produkcyjna: nie ma jeszcze frontendowej Mini App wywołującej `navigator.credentials.create/get`, testów kryptograficznych end-to-end z rzeczywistymi authenticatorami, testów Telegram WebView, pełnego procesu odzyskiwania ani przeglądu bezpieczeństwa. Rate limiting musi zostać dodany na warstwie API/gateway przed wystawieniem publicznym. Nie deklarujemy zgodności Telegram Android/iOS/Desktop bez testów na rzeczywistych klientach.
 
 Lokalnie ustaw `TELEGRAM_BOT_TOKEN`, `WEBAUTHN_RP_ID` i `WEBAUTHN_ORIGIN`. W środowisku produkcyjnym wymagane są HTTPS oraz dokładne dopasowanie RP ID i originu.
+
+
+## Pierwszy klient Mini App
+
+Frontend React + TypeScript w katalogu `miniapp/` obsługuje bezpośrednie endpointy backendu:
+- rejestrację Passkey;
+- logowanie i odświeżenie sesji;
+- listę oraz unieważnianie poświadczeń;
+- wylogowanie.
+
+Klient przekazuje Telegram `initData` wyłącznie w nagłówku `X-Telegram-Init-Data`, a cookie sesyjne przez `credentials: include`. Nie zapisuje tokenów sesyjnych w JavaScript i nie oferuje PIN-u.
+
+**Celowo poza zakresem tego etapu:** handoff do zewnętrznej przeglądarki. Wymaga on dodatkowych endpointów backendowych, atomowego zużywania biletów i testów integracyjnych; nie należy włączać przycisku handoff, dopóki zależny backend nie zostanie scalony i zweryfikowany. Testy na rzeczywistych klientach Telegram i fizycznych authenticatorach nadal są wymagane przed produkcją.

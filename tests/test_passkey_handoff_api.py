@@ -174,7 +174,7 @@ def test_handoff_api_rejects_untrusted_origin_before_issuing_ticket(api_client) 
 
 
 def test_authentication_options_api_does_not_disclose_passkey_presence(api_client) -> None:
-    client, factory = api_client
+    client, _factory = api_client
     headers = {"Origin": ORIGIN, "X-Telegram-Init-Data": INIT_DATA}
     response = client.post("/auth/passkeys/authentication/options", headers=headers)
 

@@ -66,7 +66,11 @@ def start_recovery_case(
     db: Session = Depends(get_db),
 ) -> dict:
     identity = verify_telegram_init_data(x_telegram_init_data)
-    user = db.scalar(select(User).where(User.telegram_user_id == identity["telegram_user_id"]))
+    user = db.scalar(
+        select(User)
+        .where(User.telegram_user_id == identity["telegram_user_id"])
+        .with_for_update()
+    )
     if user is None:
         raise HTTPException(status_code=404, detail="Account not found")
     contact = db.get(RecoveryContact, user.id)

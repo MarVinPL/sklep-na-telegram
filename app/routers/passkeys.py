@@ -256,11 +256,15 @@ def authentication_verify(
     user = _get_or_create_user(db, identity["telegram_user_id"])
     challenge = _consume_challenge(db, payload.challenge_id, user.id, "authentication", x_telegram_init_data)
     credential_id = payload.credential.get("id")
-    credential = db.scalar(select(PasskeyCredential).where(
-        PasskeyCredential.credential_id == credential_id,
-        PasskeyCredential.user_id == user.id,
-        PasskeyCredential.revoked_at.is_(None),
-    ))
+    credential = db.scalar(
+        select(PasskeyCredential)
+        .where(
+            PasskeyCredential.credential_id == credential_id,
+            PasskeyCredential.user_id == user.id,
+            PasskeyCredential.revoked_at.is_(None),
+        )
+        .with_for_update()
+    )
     if credential is None:
         raise HTTPException(status_code=401, detail="Passkey not recognized")
     settings = get_settings()

@@ -15,7 +15,7 @@ dependencies = [
   "psycopg[binary]>=3.2,<4.0",
   "alembic>=1.14,<2.0",
   "webauthn>=3.0.1,<4.0",
-  "cryptography>=43,<47",
+  "cryptography>=49,<50",
 ]
 
 [project.optional-dependencies]

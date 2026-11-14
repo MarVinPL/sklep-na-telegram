@@ -86,7 +86,7 @@ Endpointy:
 - `POST /auth/passkeys/logout`
 - `POST /auth/passkeys/{credential_id}/revoke`
 
-Każdy etap ceremonii wymaga zweryfikowanego nagłówka `X-Telegram-Init-Data`. Logowanie wymaga zarówno aktualnego kontekstu Telegrama, jak i prawidłowego Passkey. PIN nie jest fallbackiem.
+Bezpośrednie rejestracja i logowanie wymagają zweryfikowanego nagłówka `X-Telegram-Init-Data`. W ścieżce handoff zewnętrzna przeglądarka nie otrzymuje `initData`; używa jednorazowego biletu związanego z oryginalnym kontekstem, a oryginalna Mini App musi przed utworzeniem sesji ponownie przedstawić ten sam `initData`. PIN nie jest fallbackiem.
 
 To nadal nie jest kompletna funkcja produkcyjna: nie ma jeszcze frontendowej Mini App wywołującej `navigator.credentials.create/get`, testów kryptograficznych end-to-end z rzeczywistymi authenticatorami, testów Telegram WebView, pełnego procesu odzyskiwania ani przeglądu bezpieczeństwa. Rate limiting musi zostać dodany na warstwie API/gateway przed wystawieniem publicznym. Nie deklarujemy zgodności Telegram Android/iOS/Desktop bez testów na rzeczywistych klientach.
 
@@ -122,7 +122,7 @@ Frontend React + TypeScript w katalogu `miniapp/` obsługuje bezpośrednie endpo
 
 Klient przekazuje Telegram `initData` wyłącznie w nagłówku `X-Telegram-Init-Data`, a cookie sesyjne przez `credentials: include`. Nie zapisuje tokenów sesyjnych w JavaScript i nie oferuje PIN-u.
 
-Handoff do zewnętrznej przeglądarki celowo nie jest częścią tego PR. Wymaga osobnych endpointów backendowych, atomowego zużycia biletów i testów na rzeczywistych klientach Telegram. Nie należy pokazywać przycisku handoff, dopóki zależny backend nie zostanie scalony i zweryfikowany.
+Jednorazowy handoff do zewnętrznej przeglądarki jest implementowany w osobnym PR Issue #15. Sesja powstaje dopiero po redeem biletu w oryginalnym Telegram WebView. Walidacja na rzeczywistych klientach Telegram i niezależny security review pozostają wymagane przed produkcją.
 
 
 ## Rate limiting endpointów Passkey

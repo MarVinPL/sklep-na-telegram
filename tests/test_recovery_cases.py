@@ -1,3 +1,4 @@
+import hashlib
 import json
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
@@ -63,6 +64,7 @@ def _seed_recovery_user(factory, telegram_id="recover-me"):
             verified_at=datetime.now(UTC),
             independence_verified_at=datetime.now(UTC),
             independence_verifier_user_id=verifier.id,
+            independence_telegram_identity_hash=hashlib.sha256(telegram_id.encode()).hexdigest(),
             independence_method="independent_voice",
             independence_audit_ref="AUDIT-2026-TEST-001",
         ))

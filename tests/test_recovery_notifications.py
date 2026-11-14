@@ -160,3 +160,29 @@ def test_transient_failure_is_retried_with_backoff(monkeypatch):
             for row in rows
         )
     engine.dispose()
+
+
+
+def test_veto_prevents_pending_hold_notification_from_starting_clock(monkeypatch):
+    _configure_crypto(monkeypatch)
+    engine = _database()
+    monkeypatch.setattr(notifications, "_deliver", lambda db, row: None)
+    with Session(engine) as db:
+        case = _case(db, status="manual_review")
+        case.vetoed_at = datetime.now(UTC)
+        notifications.queue_event(
+            db,
+            user_id=case.user_id,
+            event_key=f"{case.id}:hold_started",
+            event_type="recovery_hold_started",
+            email_subject="Hold",
+            email_body="Email",
+            telegram_body="Telegram",
+        )
+        db.commit()
+        notifications.dispatch_due_notifications(db)
+        db.refresh(case)
+        assert case.status == "manual_review"
+        assert case.hold_started_at is None
+        assert case.hold_ends_at is None
+    engine.dispose()

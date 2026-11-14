@@ -1,3 +1,4 @@
+import ipaddress
 from functools import lru_cache
 from urllib.parse import urlsplit
 
@@ -21,12 +22,20 @@ class Settings(BaseSettings):
     webauthn_rp_id: str = "localhost"
     webauthn_rp_name: str = "Sklep na Telegram"
     webauthn_origin: str = "http://localhost:8000"
+    cors_allowed_origins: str = ""
     webauthn_challenge_ttl: int = 180
     auth_session_ttl: int = 86400
     auth_cookie_name: str = "shop_session"
 
+    @property
+    def allowed_origins(self) -> list[str]:
+        configured = [
+            item.strip() for item in self.cors_allowed_origins.split(",") if item.strip()
+        ]
+        return configured or [self.webauthn_origin]
+
     @model_validator(mode="after")
-    def validate_production_security(self) -> "Settings":
+    def validate_security_settings(self) -> "Settings":
         if self.telegram_init_data_max_age <= 0:
             raise ValueError("TELEGRAM_INIT_DATA_MAX_AGE must be positive")
         if self.webauthn_challenge_ttl <= 0 or self.auth_session_ttl <= 0:
@@ -38,12 +47,21 @@ class Settings(BaseSettings):
             return self
 
         database_scheme = urlsplit(self.database_url).scheme
-        if not database_scheme.startswith("postgresql"):
-            raise ValueError("Production requires a PostgreSQL DATABASE_URL")
-        if not self.telegram_bot_token:
+        if database_scheme not in {"postgresql", "postgresql+psycopg"}:
+            raise ValueError("Production requires a supported PostgreSQL DATABASE_URL")
+        if not self.telegram_bot_token.strip():
             raise ValueError("Production requires TELEGRAM_BOT_TOKEN")
 
         rp_id = self.webauthn_rp_id.strip().lower().rstrip(".")
+        if not rp_id or rp_id == "localhost" or rp_id.endswith(".localhost"):
+            raise ValueError("WEBAUTHN_RP_ID must be a public domain in production")
+        try:
+            ipaddress.ip_address(rp_id)
+        except ValueError:
+            pass
+        else:
+            raise ValueError("WEBAUTHN_RP_ID must be a domain name, not an IP address")
+
         origin = urlsplit(self.webauthn_origin)
         origin_host = (origin.hostname or "").lower().rstrip(".")
         if (
@@ -51,15 +69,30 @@ class Settings(BaseSettings):
             or not origin_host
             or origin.username is not None
             or origin.password is not None
-            or origin.path not in ("", "/")
+            or origin.path != ""
             or origin.query
             or origin.fragment
         ):
             raise ValueError("Production WEBAUTHN_ORIGIN must be a bare HTTPS origin")
-        if rp_id == "localhost" or not (
-            origin_host == rp_id or origin_host.endswith(f".{rp_id}")
-        ):
-            raise ValueError("Production WEBAUTHN_RP_ID must match the HTTPS origin host")
+        if origin_host != rp_id and not origin_host.endswith(f".{rp_id}"):
+            raise ValueError("WEBAUTHN_ORIGIN host must match WEBAUTHN_RP_ID")
+
+        for allowed_origin in self.allowed_origins:
+            parsed = urlsplit(allowed_origin)
+            host = (parsed.hostname or "").lower().rstrip(".")
+            if (
+                parsed.scheme != "https"
+                or not host
+                or "*" in host
+                or parsed.username is not None
+                or parsed.password is not None
+                or parsed.path != ""
+                or parsed.query
+                or parsed.fragment
+            ):
+                raise ValueError("CORS_ALLOWED_ORIGINS must contain exact HTTPS origins")
+            if host != rp_id and not host.endswith(f".{rp_id}"):
+                raise ValueError("Each CORS origin host must match WEBAUTHN_RP_ID")
 
         return self
 

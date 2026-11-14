@@ -3,8 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
 from app.routers.passkeys import router as passkeys_router
-from app.routers.recovery_contact import router as recovery_contact_router
 from app.routers.recovery_cases import router as recovery_cases_router
+from app.routers.recovery_contact import router as recovery_contact_router
 from app.routers.recovery_operators import router as recovery_operators_router
 
 

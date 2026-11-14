@@ -24,8 +24,9 @@ Uniwersalna, otwartoźródłowa platforma sklepowa działająca w Telegramie. Je
 ## Szybki start środowiska
 
 1. Skopiuj `.env.example` do `.env`.
-2. Uzupełnij lokalne wartości konfiguracyjne.
-3. Uruchom `docker compose up -d`.
+2. Ustaw w `.env` unikalne, długie hasło `POSTGRES_PASSWORD` — Compose celowo nie ma domyślnego hasła.
+3. Uzupełnij pozostałe lokalne wartości konfiguracyjne.
+4. Uruchom `docker compose up -d`.
 
 Compose na tym etapie uruchamia wyłącznie bazę PostgreSQL. API, bot i Mini App zostaną dodane w kolejnych etapach; nie należy traktować tego kroku jako uruchomienia sklepu.
 

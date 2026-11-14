@@ -1,3 +1,4 @@
+import hashlib
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -284,6 +285,9 @@ def attest_recovery_contact_independence(
         raise HTTPException(status_code=409, detail="Contact independence is already attested")
     contact.independence_verified_at = datetime.now(UTC)
     contact.independence_verifier_user_id = verifier.id
+    contact.independence_telegram_identity_hash = hashlib.sha256(
+        recovery_user.telegram_user_id.encode("utf-8")
+    ).hexdigest()
     contact.independence_method = payload.method
     contact.independence_audit_ref = payload.audit_reference
     contact.independence_revoked_at = None

@@ -1,4 +1,5 @@
 import hashlib
+import logging
 from collections.abc import Generator
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
@@ -38,6 +39,7 @@ def make_user(db: Session, telegram_user_id: str) -> User:
 def test_handoff_token_is_hashed_context_bound_and_single_use(
     db: Session, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
+    caplog.set_level(logging.INFO, logger=passkeys.__name__)
     monkeypatch.setattr(
         passkeys,
         "get_settings",

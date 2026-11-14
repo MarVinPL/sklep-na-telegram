@@ -22,18 +22,19 @@ def upgrade() -> None:
     op.add_column("recovery_contacts", sa.Column("independence_audit_ref", sa.String(length=128), nullable=True))
     op.add_column("recovery_contacts", sa.Column("independence_revoked_at", sa.DateTime(timezone=True), nullable=True))
     op.add_column("recovery_contacts", sa.Column("independence_revocation_reason", sa.String(length=500), nullable=True))
-    op.create_foreign_key(
-        "fk_recovery_contacts_independence_verifier",
-        "recovery_contacts",
-        "users",
-        ["independence_verifier_user_id"],
-        ["id"],
-        ondelete="RESTRICT",
-    )
+    with op.batch_alter_table("recovery_contacts") as batch_op:
+        batch_op.create_foreign_key(
+            "fk_recovery_contacts_independence_verifier",
+            "users",
+            ["independence_verifier_user_id"],
+            ["id"],
+            ondelete="RESTRICT",
+        )
 
 
 def downgrade() -> None:
-    op.drop_constraint("fk_recovery_contacts_independence_verifier", "recovery_contacts", type_="foreignkey")
+    with op.batch_alter_table("recovery_contacts") as batch_op:
+        batch_op.drop_constraint("fk_recovery_contacts_independence_verifier", type_="foreignkey")
     op.drop_column("recovery_contacts", "independence_revocation_reason")
     op.drop_column("recovery_contacts", "independence_revoked_at")
     op.drop_column("recovery_contacts", "independence_audit_ref")

@@ -5,13 +5,14 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
+from cryptography.fernet import Fernet
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.db import Base, get_db
 from app.main import create_app
-from app.models import AuthSession, RecoveryContact, SecurityOperator, User
+from app.models import AuthSession, RecoveryCase, RecoveryContact, SecurityOperator, User
 
 ORIGIN = "http://localhost:5173"
 SESSION = "operator-test-session"
@@ -33,7 +34,7 @@ def operator_client(monkeypatch: pytest.MonkeyPatch) -> Generator[tuple[TestClie
         webauthn_rp_id="localhost", webauthn_rp_name="test", webauthn_origin=ORIGIN,
         webauthn_challenge_ttl=180, auth_session_ttl=3600, auth_cookie_name="shop_session",
         auth_rate_limit_max_requests=50, auth_rate_limit_account_max_requests=50,
-        auth_rate_limit_window_seconds=60, recovery_contact_encryption_key="",
+        auth_rate_limit_window_seconds=60, recovery_contact_encryption_key=Fernet.generate_key().decode(),
         smtp_host="", smtp_port=587, smtp_username="", smtp_password="", smtp_from_address="",
         smtp_starttls=True, smtp_ssl=False, smtp_timeout_seconds=3,
     )
@@ -127,6 +128,13 @@ def test_operator_cannot_decide_own_recovery_and_case_decision_is_unique(operato
             user_id=ids["target"], encrypted_email=b"ciphertext", email_digest="d" * 64,
             verification_expires_at=datetime.now(UTC) + timedelta(days=1),
             verified_at=datetime.now(UTC),
+        ))
+        db.add(RecoveryCase(
+            id="7b4b1d6e-9d6f-4e91-8c27-9b35b8f53e2a",
+            user_id=ids["target"],
+            status="awaiting_approvals",
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
         ))
         db.commit()
     client.cookies.set("shop_session", f"{SESSION}-operator")

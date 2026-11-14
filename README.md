@@ -2,7 +2,7 @@
 
 Uniwersalna, otwartoźródłowa platforma sklepowa działająca w Telegramie. Jeden backend obsługuje wiele niezależnych sklepów (multi-tenant), a klienci i administratorzy korzystają z bota Telegram oraz Telegram Mini App.
 
-> **Status: wczesny development.** Dostępne są dokumentacja, lokalny PostgreSQL i minimalne API FastAPI z endpointem health check. To nie jest jeszcze gotowy system sprzedażowy ani wdrożenie produkcyjne.
+> **Status: wczesny development.** Dostępne są fundamenty, API FastAPI, PostgreSQL i backendowe endpointy Passkey (WebAuthn). Nie ma jeszcze Mini App, bota, katalogu, koszyka ani procesu płatności. To nie jest wdrożenie produkcyjne.
 
 ## Założenia
 
@@ -24,11 +24,10 @@ Uniwersalna, otwartoźródłowa platforma sklepowa działająca w Telegramie. Je
 ## Szybki start środowiska
 
 1. Skopiuj `.env.example` do `.env`.
-2. Ustaw w `.env` unikalne, długie hasło `POSTGRES_PASSWORD` — Compose celowo nie ma domyślnego hasła.
-3. Uzupełnij pozostałe lokalne wartości konfiguracyjne.
-4. Uruchom `docker compose up -d`.
+2. Uzupełnij lokalne wartości konfiguracyjne.
+3. Uruchom `docker compose up -d`.
 
-Compose na tym etapie uruchamia PostgreSQL i minimalne API FastAPI. Bot i Mini App zostaną dodane w kolejnych etapach; nie należy traktować tego kroku jako uruchomienia sklepu.
+Docker Compose uruchamia lokalnie PostgreSQL i API; migracje Alembic wykonują się przy starcie kontenera API. Ustaw prawdziwy lokalny `TELEGRAM_BOT_TOKEN` oraz dokładne `WEBAUTHN_RP_ID` i `WEBAUTHN_ORIGIN`, zanim przetestujesz endpointy Passkey. Domyślne wartości RP/origin służą wyłącznie lokalnemu developmentowi. Bot i Mini App nie są jeszcze zaimplementowane, więc sam backend nie jest gotowym sklepem.
 
 ## Dokumentacja
 

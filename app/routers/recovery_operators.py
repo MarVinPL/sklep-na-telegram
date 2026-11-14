@@ -310,10 +310,27 @@ def revoke_recovery_contact_independence(
     contact = db.get(RecoveryContact, recovery_user.id)
     if contact is None or contact.independence_verified_at is None or contact.independence_revoked_at is not None:
         raise HTTPException(status_code=409, detail="No active independence attestation exists")
-    contact.independence_revoked_at = datetime.now(UTC)
+    now = datetime.now(UTC)
+    contact.independence_revoked_at = now
     contact.independence_revocation_reason = payload.reason.strip()
+    active_cases = db.scalars(
+        select(RecoveryCase)
+        .where(
+            RecoveryCase.user_id == recovery_user.id,
+            RecoveryCase.status.in_({
+                "awaiting_approvals", "awaiting_notification_delivery",
+                "hold_active", "hold_complete_pending_review",
+            }),
+        )
+        .with_for_update()
+    ).all()
+    for case in active_cases:
+        case.status = "manual_review"
+        case.contact_approval_token_hash = None
+        case.veto_token_hash = None
+        case.updated_at = now
     db.commit()
-    return {"revoked": True, "independence_verified": False}
+    return {"revoked": True, "independence_verified": False, "active_cases_blocked": len(active_cases)}
 
 @router.post("/cases/{case_id}/decision")
 def record_recovery_operator_decision(

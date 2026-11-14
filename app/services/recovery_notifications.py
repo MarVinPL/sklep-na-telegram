@@ -18,7 +18,12 @@ from app.models import (
     User,
 )
 from app.services.email import EmailDeliveryError, EmailTransportNotConfigured, send_email
-from app.services.recovery_contact_crypto import decrypt_contact, decrypt_payload, encrypt_payload
+from app.services.recovery_contact_crypto import (
+    RecoveryContactCryptoNotConfigured,
+    decrypt_contact,
+    decrypt_payload,
+    encrypt_payload,
+)
 
 
 MAX_ATTEMPTS = 8
@@ -154,7 +159,13 @@ def dispatch_due_notifications(db: Session, *, limit: int = 25) -> int:
         attempt_number = row.attempt_count + 1
         try:
             _deliver(db, row)
-        except (NotificationChannelUnavailable, EmailDeliveryError, EmailTransportNotConfigured, ValueError):
+        except (
+            NotificationChannelUnavailable,
+            EmailDeliveryError,
+            EmailTransportNotConfigured,
+            RecoveryContactCryptoNotConfigured,
+            ValueError,
+        ):
             row.attempt_count = attempt_number
             row.status = "dead" if attempt_number >= MAX_ATTEMPTS else "retry"
             row.last_error_code = "delivery_unavailable"

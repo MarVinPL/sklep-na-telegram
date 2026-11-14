@@ -142,6 +142,14 @@ def test_operator_cannot_decide_own_recovery_and_case_decision_is_unique(operato
     body = {"recovery_telegram_user_id": "target", "decision": "approve", "reason": "Reviewed independent evidence"}
     headers = {"Origin": ORIGIN, "X-Telegram-Init-Data": "operator"}
     assert client.post(path, headers=headers, json=body).status_code == 200
+    status_response = client.get(
+        "/auth/passkeys/recovery-operators/cases/7b4b1d6e-9d6f-4e91-8c27-9b35b8f53e2a/notifications",
+        headers=headers,
+    )
+    assert status_response.status_code == 200
+    notices = status_response.json()["notifications"]
+    assert {notice["channel"] for notice in notices} == {"email", "telegram"}
+    assert all("encrypted_payload" not in notice for notice in notices)
     assert client.post(path, headers=headers, json=body).status_code == 409
     own = {**body, "recovery_telegram_user_id": "operator"}
     assert client.post(path, headers=headers, json=own).status_code == 403

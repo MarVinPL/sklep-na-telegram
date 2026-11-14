@@ -1,0 +1,172 @@
+import json
+import smtplib
+import urllib.error
+import urllib.request
+from datetime import UTC, datetime, timedelta
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.core.config import get_settings
+from app.models import (
+    NotificationAttempt,
+    NotificationOutbox,
+    RecoveryCase,
+    RecoveryContact,
+    User,
+)
+from app.services.email import EmailDeliveryError, EmailTransportNotConfigured, send_email
+from app.services.recovery_contact_crypto import decrypt_contact, decrypt_payload, encrypt_payload
+
+
+MAX_ATTEMPTS = 8
+RETRY_BASE_SECONDS = 30
+RETRY_MAX_SECONDS = 6 * 60 * 60
+
+
+class NotificationChannelUnavailable(RuntimeError):
+    """Raised when a required notification channel cannot currently deliver."""
+
+
+def queue_event(
+    db: Session,
+    *,
+    user_id: int,
+    event_key: str,
+    event_type: str,
+    email_subject: str,
+    email_body: str,
+    telegram_body: str,
+) -> None:
+    """Idempotently queue both required security channels with encrypted payloads."""
+    payloads = {
+        "email": {"subject": email_subject, "body": email_body},
+        "telegram": {"body": telegram_body},
+    }
+    now = datetime.now(UTC)
+    for channel, payload in payloads.items():
+        existing = db.scalar(
+            select(NotificationOutbox).where(
+                NotificationOutbox.event_key == event_key,
+                NotificationOutbox.channel == channel,
+            )
+        )
+        if existing is None:
+            db.add(NotificationOutbox(
+                event_key=event_key,
+                user_id=user_id,
+                channel=channel,
+                event_type=event_type,
+                encrypted_payload=encrypt_payload(json.dumps(payload, separators=(",", ":"))),
+                status="pending",
+                attempt_count=0,
+                next_attempt_at=now,
+            ))
+
+
+def _send_telegram(chat_id: str, text: str) -> None:
+    token = get_settings().telegram_bot_token.strip()
+    if not token:
+        raise NotificationChannelUnavailable("telegram_not_configured")
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    data = json.dumps({"chat_id": chat_id, "text": text, "disable_web_page_preview": True}).encode()
+    request = urllib.request.Request(
+        url,
+        data=data,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=8) as response:
+            result = json.loads(response.read().decode("utf-8"))
+        if not result.get("ok"):
+            raise NotificationChannelUnavailable("telegram_rejected")
+    except (OSError, urllib.error.URLError, TimeoutError):
+        raise NotificationChannelUnavailable("telegram_delivery_failed") from None
+
+
+def _deliver(db: Session, row: NotificationOutbox) -> None:
+    payload = json.loads(decrypt_payload(row.encrypted_payload))
+    user = db.get(User, row.user_id)
+    if user is None:
+        raise NotificationChannelUnavailable("recipient_unavailable")
+    if row.channel == "email":
+        contact = db.get(RecoveryContact, row.user_id)
+        if contact is None or contact.verified_at is None:
+            raise NotificationChannelUnavailable("verified_contact_unavailable")
+        recipient = decrypt_contact(contact.encrypted_email)
+        send_email(recipient=recipient, subject=payload["subject"], text_body=payload["body"])
+        return
+    if row.channel == "telegram":
+        _send_telegram(user.telegram_user_id, payload["body"])
+        return
+    raise NotificationChannelUnavailable("unsupported_channel")
+
+
+def _maybe_start_hold(db: Session, event_key: str, now: datetime) -> None:
+    if not event_key.endswith(":hold_started"):
+        return
+    case_id = event_key.removesuffix(":hold_started")
+    case = db.scalar(select(RecoveryCase).where(RecoveryCase.id == case_id).with_for_update())
+    if case is None or case.status != "awaiting_notification_delivery":
+        return
+    rows = db.scalars(
+        select(NotificationOutbox).where(NotificationOutbox.event_key == event_key)
+    ).all()
+    if len(rows) == 2 and all(row.status == "delivered" for row in rows):
+        case.status = "hold_active"
+        case.hold_started_at = now
+        case.hold_ends_at = now + timedelta(hours=24)
+        case.updated_at = now
+
+
+def dispatch_due_notifications(db: Session, *, limit: int = 25) -> int:
+    """Deliver due outbox rows; bounded retries are at-least-once, never exactly-once."""
+    now = datetime.now(UTC)
+    rows = db.scalars(
+        select(NotificationOutbox)
+        .where(
+            NotificationOutbox.status.in_({"pending", "retry"}),
+            NotificationOutbox.next_attempt_at <= now,
+        )
+        .order_by(NotificationOutbox.created_at.asc())
+        .limit(limit)
+        .with_for_update(skip_locked=True)
+    ).all()
+    delivered = 0
+    for row in rows:
+        attempt_number = row.attempt_count + 1
+        try:
+            _deliver(db, row)
+        except (NotificationChannelUnavailable, EmailDeliveryError, EmailTransportNotConfigured, ValueError):
+            row.attempt_count = attempt_number
+            row.status = "dead" if attempt_number >= MAX_ATTEMPTS else "retry"
+            row.last_error_code = "delivery_unavailable"
+            delay = min(RETRY_BASE_SECONDS * (2 ** (attempt_number - 1)), RETRY_MAX_SECONDS)
+            row.next_attempt_at = now + timedelta(seconds=delay)
+            db.add(NotificationAttempt(
+                outbox_id=row.id,
+                attempt_number=attempt_number,
+                outcome="failed",
+                error_code=row.last_error_code,
+            ))
+            if row.status == "dead" and row.event_type.startswith("recovery_"):
+                case_id = row.event_key.split(":", 1)[0]
+                case = db.scalar(select(RecoveryCase).where(RecoveryCase.id == case_id).with_for_update())
+                if case is not None and case.status not in {"vetoed", "hold_complete_pending_review"}:
+                    case.status = "notification_blocked"
+                    case.updated_at = now
+            continue
+        row.attempt_count = attempt_number
+        row.status = "delivered"
+        row.delivered_at = now
+        row.last_error_code = None
+        db.add(NotificationAttempt(
+            outbox_id=row.id,
+            attempt_number=attempt_number,
+            outcome="delivered",
+        ))
+        _maybe_start_hold(db, row.event_key, now)
+        delivered += 1
+    db.commit()
+    return delivered

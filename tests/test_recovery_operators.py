@@ -101,6 +101,12 @@ def test_operator_change_requires_two_distinct_approvals(operator_client):
     request_id = created.json()["request_id"]
 
     client.cookies.set("shop_session", f"{SESSION}-operator-b")
+    queue = client.get(
+        "/auth/passkeys/recovery-operators/changes",
+        headers={"Origin": ORIGIN, "X-Telegram-Init-Data": "operator-b"},
+    )
+    assert queue.status_code == 200
+    assert queue.json()["requests"][0]["request_id"] == request_id
     second = client.post(
         f"/auth/passkeys/recovery-operators/changes/{request_id}/approval",
         headers={"Origin": ORIGIN, "X-Telegram-Init-Data": "operator-b"},

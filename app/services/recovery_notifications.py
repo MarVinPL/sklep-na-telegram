@@ -130,14 +130,25 @@ def _maybe_start_hold(db: Session, event_key: str, now: datetime) -> None:
     case = db.scalar(select(RecoveryCase).where(RecoveryCase.id == case_id).with_for_update())
     if case is None or case.status != "awaiting_notification_delivery":
         return
+    required_events = {
+        "recovery_case_started",
+        "recovery_contact_approved",
+        "recovery_operator_approved",
+        "recovery_hold_started",
+    }
     rows = db.scalars(
-        select(NotificationOutbox).where(NotificationOutbox.event_key == event_key)
+        select(NotificationOutbox).where(NotificationOutbox.event_key.like(f"{case.id}:%"))
     ).all()
-    if len(rows) == 2 and all(row.status == "delivered" for row in rows):
-        case.status = "hold_active"
-        case.hold_started_at = now
-        case.hold_ends_at = now + timedelta(hours=24)
-        case.updated_at = now
+    for required_event in required_events:
+        event_rows = [row for row in rows if row.event_type == required_event]
+        if len(event_rows) != 2 or {row.channel for row in event_rows} != {"email", "telegram"}:
+            return
+        if any(row.status != "delivered" for row in event_rows):
+            return
+    case.status = "hold_active"
+    case.hold_started_at = now
+    case.hold_ends_at = now + timedelta(hours=24)
+    case.updated_at = now
 
 
 def dispatch_due_notifications(db: Session, *, limit: int = 25) -> int:

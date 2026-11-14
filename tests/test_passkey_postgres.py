@@ -11,8 +11,8 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 
 from app.db import Base
-from app.models import AuthRateLimit, User, WebAuthnChallenge
-from app.routers.passkeys import _consume_challenge, _get_or_create_user
+from app.models import AuthRateLimit, PasskeyHandoff, User, WebAuthnChallenge
+from app.routers.passkeys import _consume_challenge, _consume_handoff, _get_or_create_user
 from app.security.rate_limit import consume_ip_rate_limit
 
 DATABASE_URL = os.getenv("TEST_DATABASE_URL")
@@ -139,3 +139,49 @@ def test_postgres_rate_limit_upsert_is_atomic_under_concurrency(
         ).all()
         assert len(rows) == 1
         assert rows[0].request_count == worker_count
+
+
+
+def test_postgres_handoff_token_can_be_consumed_only_once_concurrently(
+    postgres_session_factory,
+) -> None:
+    raw_token = "handoff-concurrency-token-" + ("x" * 32)
+    token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+    with postgres_session_factory() as setup:
+        user = User(telegram_user_id="pg-handoff-race")
+        setup.add(user)
+        setup.flush()
+        setup.add(
+            PasskeyHandoff(
+                user_id=user.id,
+                purpose="authentication",
+                token_hash=token_hash,
+                context_hash=hashlib.sha256(b"original-telegram-init-data").hexdigest(),
+                expires_at=datetime.now(UTC) + timedelta(minutes=2),
+            )
+        )
+        setup.commit()
+
+    barrier = Barrier(2)
+
+    def consume():
+        with postgres_session_factory() as session:
+            barrier.wait(timeout=10)
+            try:
+                result = _consume_handoff(session, raw_token)
+                session.commit()
+                return result[1]
+            except HTTPException:
+                session.rollback()
+                return None
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(lambda _: consume(), range(2)))
+
+    assert sum(result is not None for result in results) == 1
+    with postgres_session_factory() as session:
+        handoff = session.scalar(
+            select(PasskeyHandoff).where(PasskeyHandoff.token_hash == token_hash)
+        )
+        assert handoff is not None
+        assert handoff.consumed_at is not None

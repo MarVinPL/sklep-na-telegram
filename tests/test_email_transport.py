@@ -72,3 +72,19 @@ def test_smtp_failure_is_normalized_without_server_details(
             recipient="person@example.com", subject="Verify", text_body="Body",
         )
     assert "private server diagnostic" not in str(error.value)
+
+def test_production_smtp_rejects_plaintext_transport() -> None:
+    with pytest.raises(ValueError, match="Production SMTP requires TLS"):
+        Settings(
+            **{
+                "app_env": "production",
+                "database_url": "postgresql+psycopg://shop:secret@db:5432/shop",
+                "telegram_bot_token": "test-token",
+                "webauthn_rp_id": "example.com",
+                "webauthn_origin": "https://shop.example.com",
+                "smtp_host": "mail.example.com",
+                "smtp_from_address": "shop@example.com",
+                "smtp_starttls": False,
+                "smtp_ssl": False,
+            }
+        )

@@ -123,3 +123,16 @@ Frontend React + TypeScript w katalogu `miniapp/` obsługuje bezpośrednie endpo
 Klient przekazuje Telegram `initData` wyłącznie w nagłówku `X-Telegram-Init-Data`, a cookie sesyjne przez `credentials: include`. Nie zapisuje tokenów sesyjnych w JavaScript i nie oferuje PIN-u.
 
 Handoff do zewnętrznej przeglądarki celowo nie jest częścią tego PR. Wymaga osobnych endpointów backendowych, atomowego zużycia biletów i testów na rzeczywistych klientach Telegram. Nie należy pokazywać przycisku handoff, dopóki zależny backend nie zostanie scalony i zweryfikowany.
+
+
+## Rate limiting endpointów Passkey
+
+Każdy endpoint Passkey ma dwa niezależne, trwałe limity:
+- per bezpośredni adres IP i ścieżka endpointu: domyślnie 10 żądań na 60 sekund;
+- per zweryfikowane konto Telegram i ścieżka endpointu: domyślnie 6 żądań na 60 sekund.
+
+Wartości można zmienić przez `AUTH_RATE_LIMIT_MAX_REQUESTS`, `AUTH_RATE_LIMIT_ACCOUNT_MAX_REQUESTS` i `AUTH_RATE_LIMIT_WINDOW_SECONDS`. Liczniki są przechowywane w PostgreSQL i aktualizowane atomowym upsertem, więc współdzielą stan między workerami. SQLite jest obsługiwane wyłącznie dla lokalnych testów.
+
+Dla konta używany jest HMAC z tokenem bota, a nie surowy Telegram ID. Niepoprawne lub brakujące `initData` nadal podlega limitowi IP; limit konta jest naliczany dopiero po poprawnej weryfikacji Telegrama. Przekroczenie limitu zwraca HTTP 429 z nagłówkiem `Retry-After`.
+
+Adres IP pochodzi wyłącznie z bezpośredniego połączenia. `X-Forwarded-For` nie jest zaufany, dopóki nie zostanie skonfigurowana jawna lista zaufanych reverse proxy. Limity recovery i sprzątanie wygasłych bucketów pozostają osobnymi zadaniami.

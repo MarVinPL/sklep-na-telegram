@@ -118,7 +118,12 @@ export default function App() {
       setMessage("Logowanie Passkey zakończone w Telegramie.");
       await refresh();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Nie udało się odebrać potwierdzenia logowania.");
+      if (error instanceof Error && /Handoff invalid|expired|already used/i.test(error.message)) {
+        setPendingHandoffToken(null);
+        setMessage("Bilet wygasł lub został zużyty. Rozpocznij logowanie ponownie.");
+      } else {
+        setMessage(error instanceof Error ? error.message : "Nie udało się odebrać potwierdzenia logowania.");
+      }
     } finally {
       setBusy(false);
     }

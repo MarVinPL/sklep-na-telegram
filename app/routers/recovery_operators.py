@@ -10,6 +10,8 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.models import (
     OperatorChangeApproval,
+    NotificationAttempt,
+    NotificationOutbox,
     OperatorChangeRequest,
     RecoveryCase,
     RecoveryContact,
@@ -331,3 +333,52 @@ def record_recovery_operator_decision(
         db.rollback()
         raise HTTPException(status_code=409, detail="Operator already decided this recovery case") from None
     return {"recorded": True, "decision": payload.decision, "status": case.status}
+
+
+@router.get("/cases/{case_id}/notifications")
+def list_recovery_notification_status(
+    case_id: str,
+    request: Request,
+    x_telegram_init_data: str = Header(..., alias="X-Telegram-Init-Data"),
+    db: Session = Depends(get_db),
+) -> dict:
+    operator = _current_user(request, db, x_telegram_init_data)
+    _require_operator(db, operator.id)
+    try:
+        normalized_case_id = str(uuid.UUID(case_id))
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Invalid recovery case identifier") from None
+    case = db.get(RecoveryCase, normalized_case_id)
+    if case is None:
+        raise HTTPException(status_code=404, detail="Recovery case not found")
+    rows = db.scalars(
+        select(NotificationOutbox)
+        .where(NotificationOutbox.event_key.like(f"{normalized_case_id}:%"))
+        .order_by(NotificationOutbox.created_at.asc(), NotificationOutbox.id.asc())
+    ).all()
+    result = []
+    for row in rows:
+        attempts = db.scalars(
+            select(NotificationAttempt)
+            .where(NotificationAttempt.outbox_id == row.id)
+            .order_by(NotificationAttempt.attempt_number.asc())
+        ).all()
+        result.append({
+            "event_type": row.event_type,
+            "channel": row.channel,
+            "status": row.status,
+            "attempt_count": row.attempt_count,
+            "next_attempt_at": row.next_attempt_at.isoformat(),
+            "delivered_at": row.delivered_at.isoformat() if row.delivered_at else None,
+            "last_error_code": row.last_error_code,
+            "attempts": [
+                {
+                    "attempt_number": attempt.attempt_number,
+                    "outcome": attempt.outcome,
+                    "error_code": attempt.error_code,
+                    "created_at": attempt.created_at.isoformat(),
+                }
+                for attempt in attempts
+            ],
+        })
+    return {"case_id": normalized_case_id, "notifications": result}

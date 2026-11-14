@@ -135,4 +135,4 @@ Wartości można zmienić przez `AUTH_RATE_LIMIT_MAX_REQUESTS`, `AUTH_RATE_LIMIT
 
 Dla konta używany jest HMAC z tokenem bota, a nie surowy Telegram ID. Niepoprawne lub brakujące `initData` nadal podlega limitowi IP; limit konta jest naliczany dopiero po poprawnej weryfikacji Telegrama. Przekroczenie limitu zwraca HTTP 429 z nagłówkiem `Retry-After`.
 
-Adres IP pochodzi wyłącznie z bezpośredniego połączenia. `X-Forwarded-For` nie jest zaufany, dopóki nie zostanie skonfigurowana jawna lista zaufanych reverse proxy. Limity recovery i sprzątanie wygasłych bucketów pozostają osobnymi zadaniami.
+Adres IP pochodzi wyłącznie z bezpośredniego połączenia. `X-Forwarded-For` nie jest zaufany, dopóki nie zostanie skonfigurowana jawna lista zaufanych reverse proxy. Limity recovery pozostają osobnym zadaniem. Wygasłe buckety można usuwać poleceniem `python -m app.security.rate_limit_maintenance`; domyślna retencja wynosi 24 godziny i można ją zmienić przez `AUTH_RATE_LIMIT_RETENTION_SECONDS` (1 godzina–365 dni). Repozytorium nie instaluje harmonogramu — operator powinien uruchamiać polecenie cyklicznie (np. raz na godzinę) przez cron lub systemd timer.

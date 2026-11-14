@@ -7,7 +7,8 @@
 3. An active security operator records an independent approve/reject decision. The operator must not be the recovery account.
 4. The 24-hour hold is eligible only after both approvals. A hold_started event is queued to email and Telegram. The hold clock starts only after both required channel deliveries have been accepted.
 5. The recovery contact can veto before or during the hold. Veto changes the case to manual_review and blocks automatic progression. There is no override endpoint.
-6. After the hold, the case becomes hold_complete_pending_review. This PR deliberately does not issue a token, create a session, revoke credentials, or activate recovery.
+6. The account can cancel its own request before finalization. An unapproved contact token expires after 15 minutes and the worker marks the case expired with notifications.
+7. After the hold, the case becomes hold_complete_pending_review. This PR deliberately does not issue a token, create a session, revoke credentials, or activate recovery.
 
 ## Durable outbox
 

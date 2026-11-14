@@ -6,7 +6,8 @@ from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from webauthn import (
     generate_authentication_options,
@@ -26,10 +27,15 @@ from webauthn.helpers.structs import (
 from app.core.config import get_settings
 from app.db import get_db
 from app.models import AuthSession, PasskeyCredential, User, WebAuthnChallenge
+from app.security.origins import require_allowed_origin
 from app.security.sessions import require_session
 from app.security.telegram import verify_telegram_init_data
 
-router = APIRouter(prefix="/auth/passkeys", tags=["passkeys"])
+router = APIRouter(
+    prefix="/auth/passkeys",
+    tags=["passkeys"],
+    dependencies=[Depends(require_allowed_origin)],
+)
 
 
 class FinishRequest(BaseModel):
@@ -40,11 +46,21 @@ class FinishRequest(BaseModel):
 
 def _get_or_create_user(db: Session, telegram_user_id: str) -> User:
     user = db.scalar(select(User).where(User.telegram_user_id == telegram_user_id))
-    if user is None:
-        user = User(telegram_user_id=telegram_user_id)
-        db.add(user)
+    if user is not None:
+        return user
+
+    user = User(telegram_user_id=telegram_user_id)
+    db.add(user)
+    try:
         db.flush()
-    return user
+        return user
+    except IntegrityError:
+        # Another request may have inserted the same Telegram identity after our SELECT.
+        db.rollback()
+        user = db.scalar(select(User).where(User.telegram_user_id == telegram_user_id))
+        if user is None:
+            raise
+        return user
 
 
 def _require_existing_passkey_session(request: Request, db: Session, user: User) -> None:
@@ -114,21 +130,20 @@ def _session_cookie(
     db: Session, user: User, response: Response, request: Request | None = None
 ) -> None:
     settings = get_settings()
-    if request is not None:
-        previous_token = request.cookies.get(settings.auth_cookie_name)
-        if previous_token:
-            previous_hash = hashlib.sha256(previous_token.encode()).hexdigest()
-            previous_session = db.scalar(
-                select(AuthSession).where(AuthSession.token_hash == previous_hash)
-            )
-            if (
-                previous_session is not None
-                and previous_session.user_id == user.id
-                and previous_session.revoked_at is None
-            ):
-                previous_session.revoked_at = datetime.now(UTC)
+    now = datetime.now(UTC)
     raw_token = secrets.token_urlsafe(32)
-    expires = datetime.now(UTC) + timedelta(seconds=settings.auth_session_ttl)
+
+    # Enforce one active application session per user; revoke and replace atomically.
+    db.execute(
+        update(AuthSession)
+        .where(
+            AuthSession.user_id == user.id,
+            AuthSession.revoked_at.is_(None),
+        )
+        .values(revoked_at=now)
+        .execution_options(synchronize_session=False)
+    )
+    expires = now + timedelta(seconds=settings.auth_session_ttl)
     db.add(AuthSession(
         user_id=user.id,
         token_hash=hashlib.sha256(raw_token.encode()).hexdigest(),

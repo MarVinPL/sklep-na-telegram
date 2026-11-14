@@ -186,3 +186,22 @@ def test_veto_prevents_pending_hold_notification_from_starting_clock(monkeypatch
         assert case.hold_started_at is None
         assert case.hold_ends_at is None
     engine.dispose()
+
+
+
+def test_expired_contact_approval_closes_case_and_queues_notice(monkeypatch):
+    _configure_crypto(monkeypatch)
+    engine = _database()
+    with Session(engine) as db:
+        case = _case(db, status="awaiting_approvals")
+        case.contact_approval_expires_at = datetime.now(UTC) - timedelta(seconds=1)
+        case.contact_approval_token_hash = "a" * 64
+        assert notifications.expire_due_recovery_cases(db) == 1
+        db.refresh(case)
+        assert case.status == "expired"
+        assert case.contact_approval_token_hash is None
+        notices = db.scalars(
+            select(NotificationOutbox).where(NotificationOutbox.event_key == f"{case.id}:case_expired")
+        ).all()
+        assert len(notices) == 2
+    engine.dispose()

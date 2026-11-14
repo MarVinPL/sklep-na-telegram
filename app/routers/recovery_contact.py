@@ -263,8 +263,19 @@ def recovery_contact_status(
     contact = db.get(RecoveryContact, user.id)
     if contact is None:
         return {"configured": False, "verified": False}
+    independence_active = (
+        contact.independence_verified_at is not None
+        and contact.independence_verifier_user_id is not None
+        and contact.independence_method is not None
+        and contact.independence_audit_ref is not None
+        and contact.independence_revoked_at is None
+    )
     return {
         "configured": True,
+        "mailbox_verified": contact.verified_at is not None,
         "verified": contact.verified_at is not None,
         "verification_pending": contact.verified_at is None and _is_unexpired(contact.verification_expires_at, datetime.now(UTC)),
+        "independence_verified": independence_active,
+        "independence_revoked": contact.independence_revoked_at is not None,
+        "recovery_eligible": contact.verified_at is not None and independence_active,
     }

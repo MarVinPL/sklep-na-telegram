@@ -2,7 +2,10 @@ import logging
 import time
 
 from app.db import SessionLocal
-from app.services.recovery_notifications import dispatch_due_notifications, expire_due_recovery_cases
+from app.services.recovery_notifications import (
+    dispatch_due_notifications,
+    expire_due_recovery_cases,
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

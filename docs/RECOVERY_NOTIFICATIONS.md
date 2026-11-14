@@ -23,7 +23,13 @@
 
 The worker sends email through the optional standard-library SMTP adapter and Telegram notices through the Telegram Bot API. Telegram delivery requires that the account has opened the bot chat; otherwise delivery retries and eventually blocks the case. No paid service is provisioned. If either required channel is unavailable, the hold does not start.
 
-A successful provider submission is not proof that the person read the message. The approval token proves mailbox possession only; it does not technically prove that the mailbox is independent from the Telegram account. Enrollment must separately verify that independence, and recovery must remain unavailable if that cannot be established.
+A successful provider submission is not proof that the person read the message. The approval token proves mailbox possession only; it does not prove independence from the Telegram account.
+
+Mailbox verification (`verified_at`) and independence attestation (`independence_verified_at`) are separate facts. A contact is eligible only when both are present and the attestation has not been revoked. Existing contacts receive no automatic attestation during migration and therefore remain ineligible until reviewed.
+
+An active security operator records the attestation only after an out-of-band check that does not rely on the Telegram identity being recovered or on the email mailbox alone. Accepted method categories are in-person verification, an independent pre-existing voice channel, an independent pre-existing video channel, or documented verification by a separate trusted third party. The operator must record an opaque audit reference and a concise reason; do not store identity-document scans, full evidence, email addresses, or other excess personal data. The verifier must not be the recovery account. The operator who later decides the recovery case must be a different principal from the verifier.
+
+The operator can revoke an attestation when contact ownership changes, the Telegram identity changes, the independent channel is suspected compromised, or evidence is otherwise invalidated. Revocation blocks new recovery cases and moves active cases to `manual_review` while invalidating pending contact tokens. A mailbox-only contact, missing verifier, missing audit reference, or revoked attestation is always fail-closed.
 
 ## Operational boundaries
 

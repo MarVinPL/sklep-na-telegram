@@ -389,3 +389,63 @@ def test_authentication_options_do_not_disclose_credential_presence_or_count(
     assert not with_existing.get("allowCredentials")
     assert without["userVerification"] == "required"
     assert with_existing["userVerification"] == "required"
+
+
+def test_failed_handoff_passkey_never_creates_a_session(
+    db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    user = make_user(db, "handoff-failed-auth")
+    raw_token = "f" * 43
+    context_hash = hashlib.sha256(b"failed-auth-context").hexdigest()
+    handoff = PasskeyHandoff(
+        user_id=user.id,
+        purpose="authentication",
+        token_hash=hashlib.sha256(raw_token.encode()).hexdigest(),
+        context_hash=context_hash,
+        expires_at=datetime.now(UTC) + timedelta(minutes=2),
+        consumed_at=datetime.now(UTC),
+    )
+    credential = PasskeyCredential(
+        user_id=user.id,
+        credential_id="failed-auth-credential",
+        public_key=b"public-key",
+        sign_count=0,
+    )
+    challenge = WebAuthnChallenge(
+        id="handoff-failed-auth-challenge",
+        user_id=user.id,
+        purpose="handoff_authentication",
+        challenge=b"challenge-bytes",
+        context_hash=context_hash,
+        expires_at=datetime.now(UTC) + timedelta(minutes=2),
+    )
+    db.add_all([handoff, credential, challenge])
+    db.commit()
+    monkeypatch.setattr(
+        passkeys,
+        "get_settings",
+        lambda: SimpleNamespace(
+            webauthn_rp_id="example.com",
+            webauthn_origin="https://shop.example.com",
+        ),
+    )
+    monkeypatch.setattr(
+        passkeys,
+        "verify_authentication_response",
+        lambda **kwargs: (_ for _ in ()).throw(ValueError("invalid signature")),
+    )
+
+    with pytest.raises(HTTPException) as error:
+        passkeys.handoff_authentication_verify(
+            passkeys.HandoffVerifyRequest(
+                handoff_token=raw_token,
+                challenge_id=challenge.id,
+                credential={"id": credential.credential_id},
+            ),
+            db,
+        )
+
+    assert error.value.status_code == 401
+    db.refresh(handoff)
+    assert handoff.verified_at is None
+    assert db.scalars(select(AuthSession)).all() == []

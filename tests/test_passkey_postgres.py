@@ -132,7 +132,7 @@ def test_postgres_rate_limit_upsert_is_atomic_under_concurrency(
         counts = list(pool.map(lambda _: consume(), range(worker_count)))
 
     assert sorted(counts) == list(range(1, worker_count + 1))
-    expected_key = hashlib.sha256(b"ip\\0auth\\0198.51.100.42").hexdigest()
+    expected_key = hashlib.sha256(b"ip\\0auth\\0" + b"198.51.100.42").hexdigest()
     with postgres_session_factory() as session:
         rows = session.scalars(
             select(AuthRateLimit).where(AuthRateLimit.bucket_key == expected_key)

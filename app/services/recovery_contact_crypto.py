@@ -37,3 +37,17 @@ def contact_digest(value: str) -> str:
         raise RecoveryContactCryptoNotConfigured("Recovery contact encryption is not configured")
     normalized = value.strip().casefold().encode("utf-8")
     return hmac.new(key.encode("ascii"), b"recovery-contact-index:v1:" + normalized, hashlib.sha256).hexdigest()
+
+
+
+def encrypt_payload(value: str) -> bytes:
+    """Encrypt arbitrary notification payloads with the recovery-data key."""
+    return _fernet().encrypt(value.encode("utf-8"))
+
+
+def decrypt_payload(value: bytes) -> str:
+    """Decrypt an outbox payload; invalid ciphertext fails closed."""
+    try:
+        return _fernet().decrypt(value).decode("utf-8")
+    except (InvalidToken, UnicodeDecodeError):
+        raise ValueError("Notification payload ciphertext is invalid") from None

@@ -112,6 +112,48 @@ def request_operator_change(
     return {"request_id": change.id, "status": change.status, "approvals_required": 2, "approvals_recorded": 1}
 
 
+
+@router.get("/changes")
+def list_operator_changes(
+    request: Request,
+    x_telegram_init_data: str = Header(..., alias="X-Telegram-Init-Data"),
+    db: Session = Depends(get_db),
+) -> dict:
+    operator = _current_user(request, db, x_telegram_init_data)
+    _require_operator(db, operator.id)
+    now = datetime.now(UTC)
+    pending = db.scalars(
+        select(OperatorChangeRequest)
+        .where(OperatorChangeRequest.status == "pending")
+        .order_by(OperatorChangeRequest.created_at.asc())
+    ).all()
+    for change in pending:
+        if not _is_unexpired(change.expires_at, now):
+            change.status = "expired"
+            change.decided_at = now
+    db.commit()
+    rows = db.execute(
+        select(OperatorChangeRequest, User.telegram_user_id)
+        .join(User, User.id == OperatorChangeRequest.target_user_id)
+        .order_by(OperatorChangeRequest.created_at.desc())
+        .limit(100)
+    ).all()
+    return {
+        "requests": [
+            {
+                "request_id": change.id,
+                "target_telegram_user_id": telegram_user_id,
+                "action": change.action,
+                "reason": change.reason,
+                "status": change.status,
+                "created_at": change.created_at.isoformat(),
+                "expires_at": change.expires_at.isoformat(),
+            }
+            for change, telegram_user_id in rows
+        ]
+    }
+
+
 @router.post("/changes/{request_id}/approval")
 def approve_operator_change(
     request_id: str,

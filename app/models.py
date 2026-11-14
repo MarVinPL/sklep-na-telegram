@@ -76,7 +76,7 @@ class RecoveryContact(Base):
 
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
     encrypted_email: Mapped[bytes] = mapped_column(LargeBinary)
-    email_digest: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    email_digest: Mapped[str] = mapped_column(String(64), unique=True)
     verification_token_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     verification_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

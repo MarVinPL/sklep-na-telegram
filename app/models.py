@@ -93,6 +93,7 @@ class RecoveryContact(Base):
     independence_verifier_user_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="RESTRICT"), nullable=True
     )
+    independence_telegram_identity_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     independence_method: Mapped[str | None] = mapped_column(String(32), nullable=True)
     independence_audit_ref: Mapped[str | None] = mapped_column(String(128), nullable=True)
     independence_revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

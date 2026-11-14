@@ -186,3 +186,35 @@ def dispatch_due_notifications(db: Session, *, limit: int = 25) -> int:
         delivered += 1
     db.commit()
     return delivered
+
+
+
+def expire_due_recovery_cases(db: Session) -> int:
+    """Expire cases whose short-lived contact approval window elapsed."""
+    now = datetime.now(UTC)
+    cases = db.scalars(
+        select(RecoveryCase)
+        .where(
+            RecoveryCase.status == "awaiting_approvals",
+            RecoveryCase.contact_approved_at.is_(None),
+            RecoveryCase.contact_approval_expires_at.is_not(None),
+            RecoveryCase.contact_approval_expires_at <= now,
+        )
+        .with_for_update(skip_locked=True)
+    ).all()
+    for case in cases:
+        case.status = "expired"
+        case.contact_approval_token_hash = None
+        case.veto_token_hash = None
+        case.updated_at = now
+        queue_event(
+            db,
+            user_id=case.user_id,
+            event_key=f"{case.id}:case_expired",
+            event_type="recovery_case_expired",
+            email_subject="Wniosek odzyskiwania Passkey wygasł",
+            email_body=f"Okno zatwierdzenia kontaktu dla sprawy {case.id} wygasło. Nie wydano tokenu ani sesji.",
+            telegram_body="Wniosek odzyskiwania Passkey wygasł bez zatwierdzenia kontaktu.",
+        )
+    db.commit()
+    return len(cases)

@@ -350,11 +350,17 @@ def _consume_handoff(
         existing = db.scalar(
             select(PasskeyHandoff).where(PasskeyHandoff.token_hash == token_hash)
         )
+        expired = db.scalar(
+            select(PasskeyHandoff.id).where(
+                PasskeyHandoff.token_hash == token_hash,
+                PasskeyHandoff.expires_at <= now,
+            )
+        ) is not None
         reason = (
             "replay"
             if existing is not None and existing.consumed_at is not None
             else "expired"
-            if existing is not None and existing.expires_at <= now
+            if expired
             else "invalid"
         )
         logger.info(
@@ -527,10 +533,11 @@ def redeem_handoff(
             PasskeyHandoff.token_hash == token_hash,
             PasskeyHandoff.purpose == "authentication",
             PasskeyHandoff.context_hash == context_hash,
+            PasskeyHandoff.consumed_at.is_not(None),
+            PasskeyHandoff.expires_at > now,
         )
     )
-    now = datetime.now(UTC)
-    if handoff is None or handoff.expires_at <= now or handoff.consumed_at is None:
+    if handoff is None:
         raise HTTPException(status_code=400, detail="Handoff invalid, expired or already used")
 
     user = db.get(User, handoff.user_id)

@@ -22,7 +22,7 @@
 
 The worker sends email through the optional standard-library SMTP adapter and Telegram notices through the Telegram Bot API. Telegram delivery requires that the account has opened the bot chat; otherwise delivery retries and eventually blocks the case. No paid service is provisioned. If either required channel is unavailable, the hold does not start.
 
-A successful provider submission is not proof that the person read the message. The independent contact approval token is the proof of mailbox possession for this workflow.
+A successful provider submission is not proof that the person read the message. The approval token proves mailbox possession only; it does not technically prove that the mailbox is independent from the Telegram account. Enrollment must separately verify that independence, and recovery must remain unavailable if that cannot be established.
 
 ## Operational boundaries
 

@@ -141,7 +141,7 @@ def test_handoff_options_do_not_create_a_session(
 ) -> None:
     user = make_user(db, "handoff-options")
     init_data = "telegram-context-options"
-    raw_token = "handoff-options-token"
+    raw_token = "o" * 43
     context_hash = hashlib.sha256(init_data.encode()).hexdigest()
     db.add(
         PasskeyHandoff(
@@ -176,7 +176,7 @@ def test_handoff_verification_marks_ticket_ready_without_creating_session(
 ) -> None:
     user = make_user(db, "handoff-verify")
     init_data = "telegram-context-verify"
-    raw_token = "handoff-verify-token"
+    raw_token = "v" * 43
     context_hash = hashlib.sha256(init_data.encode()).hexdigest()
     handoff = PasskeyHandoff(
         user_id=user.id,
@@ -242,7 +242,7 @@ def test_redeem_handoff_requires_original_telegram_context_and_creates_session(
 ) -> None:
     user = make_user(db, "handoff-redeem")
     init_data = "original-telegram-init-data"
-    raw_token = "handoff-redeem-token"
+    raw_token = "r" * 43
     handoff = PasskeyHandoff(
         user_id=user.id,
         purpose="authentication",
@@ -291,7 +291,7 @@ def test_redeem_handoff_does_not_create_session_before_verification(
 ) -> None:
     user = make_user(db, "handoff-pending")
     init_data = "telegram-context-pending"
-    raw_token = "handoff-pending-token"
+    raw_token = "p" * 43
     handoff = PasskeyHandoff(
         user_id=user.id,
         purpose="authentication",
@@ -323,7 +323,7 @@ def test_redeem_handoff_rejects_different_telegram_context(
     db: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     user = make_user(db, "handoff-context-mismatch")
-    raw_token = "handoff-context-token"
+    raw_token = "c" * 43
     db.add(
         PasskeyHandoff(
             user_id=user.id,

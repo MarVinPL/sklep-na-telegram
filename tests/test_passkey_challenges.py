@@ -7,11 +7,11 @@ from fastapi import HTTPException
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
+from starlette.requests import Request
+from starlette.responses import Response
 
 from app.db import Base
 from app.models import AuthSession, User
-from starlette.requests import Request
-from starlette.responses import Response
 from app.routers import passkeys
 
 

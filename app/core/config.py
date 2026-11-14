@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     auth_rate_limit_window_seconds: int = Field(default=60, ge=1, le=3600)
     auth_rate_limit_retention_seconds: int = Field(default=86400, ge=3600, le=31536000)
     passkey_handoff_ttl_seconds: int = Field(default=120, ge=30, le=300)
+    recovery_contact_encryption_key: str = ""
     smtp_host: str = ""
     smtp_port: int = Field(default=587, ge=1, le=65535)
     smtp_username: str = ""

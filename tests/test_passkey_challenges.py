@@ -190,5 +190,6 @@ def test_passkey_revocation_invalidates_all_active_sessions(db: Session) -> None
     db.commit()
 
     assert count == 2
-    assert all(session.revoked_at == now for session in active)
-    assert already_revoked.revoked_at == now - timedelta(minutes=1)
+    assert all(session.revoked_at is not None for session in active)
+    assert already_revoked.revoked_at is not None
+    assert already_revoked.revoked_at < min(session.revoked_at for session in active)

@@ -207,8 +207,8 @@ def registration_verify(
             text_body=(
                 "Otrzymaliśmy prośbę o dodanie tego adresu jako niezależnego kontaktu "
                 "odzyskiwania konta. Jeśli to Ty ją rozpocząłeś, wpisz poniższy jednorazowy "
-                "kod w aplikacji. Kod wygaśnie po 15 minutach:\\n\\n"
-                f"{raw_token}\\n\\n"
+                "kod w aplikacji. Kod wygaśnie po 15 minutach:\n\n"
+                f"{raw_token}\n\n"
                 "Samo otrzymanie tej wiadomości nie rozpoczyna ani nie zatwierdza odzyskiwania konta."
             ),
         )

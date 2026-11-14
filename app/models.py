@@ -1,7 +1,7 @@
 import secrets
 from datetime import UTC, datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, LargeBinary, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, LargeBinary, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -103,3 +103,54 @@ class AuthRateLimit(Base):
     bucket_key: Mapped[str] = mapped_column(String(64), unique=True)
     window_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     request_count: Mapped[int] = mapped_column(Integer)
+
+
+class SecurityOperator(Base):
+    __tablename__ = "security_operators"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), primary_key=True)
+    granted_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=True)
+    grant_reason: Mapped[str] = mapped_column(Text)
+    granted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    revoked_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=True)
+    revocation_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class OperatorChangeRequest(Base):
+    __tablename__ = "operator_change_requests"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    target_user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), index=True)
+    requested_by_user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
+    action: Mapped[str] = mapped_column(String(16))
+    reason: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class OperatorChangeApproval(Base):
+    __tablename__ = "operator_change_approvals"
+    __table_args__ = (UniqueConstraint("request_id", "approver_user_id", name="uq_operator_change_approval"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    request_id: Mapped[str] = mapped_column(ForeignKey("operator_change_requests.id", ondelete="CASCADE"), index=True)
+    approver_user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
+    decision: Mapped[str] = mapped_column(String(16))
+    reason: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+
+
+class RecoveryOperatorDecision(Base):
+    __tablename__ = "recovery_operator_decisions"
+    __table_args__ = (UniqueConstraint("case_id", "operator_user_id", name="uq_recovery_case_operator_decision"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    case_id: Mapped[str] = mapped_column(String(36), index=True)
+    recovery_user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), index=True)
+    operator_user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
+    decision: Mapped[str] = mapped_column(String(16))
+    reason: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))

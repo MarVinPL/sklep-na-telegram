@@ -31,6 +31,14 @@ class Settings(BaseSettings):
     auth_rate_limit_window_seconds: int = Field(default=60, ge=1, le=3600)
     auth_rate_limit_retention_seconds: int = Field(default=86400, ge=3600, le=31536000)
     passkey_handoff_ttl_seconds: int = Field(default=120, ge=30, le=300)
+    smtp_host: str = ""
+    smtp_port: int = Field(default=587, ge=1, le=65535)
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_from_address: str = ""
+    smtp_starttls: bool = True
+    smtp_ssl: bool = False
+    smtp_timeout_seconds: int = Field(default=10, ge=1, le=60)
 
     @property
     def allowed_origins(self) -> list[str]:
@@ -38,6 +46,23 @@ class Settings(BaseSettings):
             item.strip() for item in self.cors_allowed_origins.split(",") if item.strip()
         ]
         return configured or [self.webauthn_origin]
+
+    @model_validator(mode="after")
+    def validate_smtp_settings(self) -> "Settings":
+        configured = bool(self.smtp_host.strip() or self.smtp_from_address.strip())
+        if configured and (not self.smtp_host.strip() or not self.smtp_from_address.strip()):
+            raise ValueError("SMTP_HOST and SMTP_FROM_ADDRESS must be configured together")
+        if bool(self.smtp_username) != bool(self.smtp_password):
+            raise ValueError("SMTP_USERNAME and SMTP_PASSWORD must be configured together")
+        if self.smtp_ssl and self.smtp_starttls:
+            raise ValueError("SMTP_SSL and SMTP_STARTTLS cannot both be enabled")
+        if (
+            self.app_env.lower() == "production"
+            and configured
+            and not (self.smtp_ssl or self.smtp_starttls)
+        ):
+            raise ValueError("Production SMTP requires TLS")
+        return self
 
     @model_validator(mode="after")
     def validate_security_settings(self) -> "Settings":

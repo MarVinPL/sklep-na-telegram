@@ -71,6 +71,18 @@ class PasskeyHandoff(Base):
     )
 
 
+class RecoveryContact(Base):
+    __tablename__ = "recovery_contacts"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    encrypted_email: Mapped[bytes] = mapped_column(LargeBinary)
+    email_digest: Mapped[str] = mapped_column(String(64), unique=True)
+    verification_token_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    verification_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+
+
 class AuthSession(Base):
     __tablename__ = "auth_sessions"
 

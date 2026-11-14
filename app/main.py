@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
 from app.routers.passkeys import router as passkeys_router
+from app.routers.recovery_contact import router as recovery_contact_router
 
 
 def create_app() -> FastAPI:
@@ -27,6 +28,7 @@ def create_app() -> FastAPI:
         return {"status": "ok"}
 
     application.include_router(passkeys_router)
+    application.include_router(recovery_contact_router)
     return application
 
 

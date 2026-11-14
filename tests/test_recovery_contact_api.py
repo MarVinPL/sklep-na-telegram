@@ -200,3 +200,25 @@ def test_contact_is_encrypted_and_only_verified_by_one_use_email_token(
         "verified": True,
         "verification_pending": False,
     }
+
+
+def test_expired_contact_can_be_replaced_with_sqlite_timestamp(recovery_client, monkeypatch):
+    client, factory = recovery_client
+    _seed_user(factory, credential_count=2)
+    client.cookies.set("shop_session", SESSION_TOKEN)
+    with factory() as db:
+        user = db.scalar(select(User).where(User.telegram_user_id == "424242"))
+        db.add(RecoveryContact(
+            user_id=user.id,
+            encrypted_email=b"expired",
+            email_digest="a" * 64,
+            verification_token_hash=None,
+            verification_expires_at=datetime.now(UTC) - timedelta(minutes=1),
+        ))
+        db.commit()
+    headers = {"Origin": ORIGIN, "X-Telegram-Init-Data": INIT_DATA}
+    response = client.post(
+        "/auth/passkeys/recovery-contact/registration/options",
+        headers=headers,
+    )
+    assert response.status_code == 200

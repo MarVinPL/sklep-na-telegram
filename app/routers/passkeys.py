@@ -97,8 +97,23 @@ def _consume_challenge(
     return row.challenge
 
 
-def _session_cookie(db: Session, user: User, response: Response) -> None:
+def _session_cookie(
+    db: Session, user: User, response: Response, request: Request | None = None
+) -> None:
     settings = get_settings()
+    if request is not None:
+        previous_token = request.cookies.get(settings.auth_cookie_name)
+        if previous_token:
+            previous_hash = hashlib.sha256(previous_token.encode()).hexdigest()
+            previous_session = db.scalar(
+                select(AuthSession).where(AuthSession.token_hash == previous_hash)
+            )
+            if (
+                previous_session is not None
+                and previous_session.user_id == user.id
+                and previous_session.revoked_at is None
+            ):
+                previous_session.revoked_at = datetime.now(UTC)
     raw_token = secrets.token_urlsafe(32)
     expires = datetime.now(UTC) + timedelta(seconds=settings.auth_session_ttl)
     db.add(AuthSession(
@@ -219,6 +234,7 @@ def authentication_options(
 @router.post("/authentication/verify")
 def authentication_verify(
     payload: FinishRequest,
+    request: Request,
     response: Response,
     x_telegram_init_data: str = Header(..., alias="X-Telegram-Init-Data"),
     db: Session = Depends(get_db),
@@ -250,7 +266,7 @@ def authentication_verify(
     credential.sign_count = verified.new_sign_count
     credential.device_type = str(verified.credential_device_type)
     credential.backed_up = verified.credential_backed_up
-    _session_cookie(db, user, response)
+    _session_cookie(db, user, response, request)
     return {"authenticated": True}
 
 
@@ -301,7 +317,7 @@ def revoke_passkey(
 ) -> dict:
     identity = verify_telegram_init_data(x_telegram_init_data)
     session = require_session(request, db)
-    user = db.get(User, session.user_id)
+    user = db.scalar(select(User).where(User.id == session.user_id).with_for_update())
     if user is None or user.telegram_user_id != identity["telegram_user_id"]:
         raise HTTPException(status_code=401, detail="Session identity mismatch")
     credential = db.scalar(select(PasskeyCredential).where(
@@ -320,9 +336,18 @@ def revoke_passkey(
             status_code=409,
             detail="Register another Passkey before revoking the last one",
         )
-    credential.revoked_at = datetime.now(UTC)
+    now = datetime.now(UTC)
+    credential.revoked_at = now
+    active_sessions = db.scalars(
+        select(AuthSession).where(
+            AuthSession.user_id == user.id,
+            AuthSession.revoked_at.is_(None),
+        )
+    ).all()
+    for active_session in active_sessions:
+        active_session.revoked_at = now
     db.commit()
-    return {"revoked": True}
+    return {"revoked": True, "sessions_revoked": len(active_sessions)}
 
 
 @router.get("")

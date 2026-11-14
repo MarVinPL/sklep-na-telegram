@@ -86,7 +86,7 @@ Endpointy:
 - `POST /auth/passkeys/logout`
 - `POST /auth/passkeys/{credential_id}/revoke`
 
-Każdy etap ceremonii wymaga zweryfikowanego nagłówka `X-Telegram-Init-Data`. Logowanie wymaga zarówno aktualnego kontekstu Telegrama, jak i prawidłowego Passkey. PIN nie jest fallbackiem.
+Bezpośrednie rejestracja i logowanie wymagają zweryfikowanego nagłówka `X-Telegram-Init-Data`. W ścieżce handoff zewnętrzna przeglądarka nie otrzymuje `initData`; używa jednorazowego biletu związanego z oryginalnym kontekstem, a oryginalna Mini App musi przed utworzeniem sesji ponownie przedstawić ten sam `initData`. PIN nie jest fallbackiem.
 
 To nadal nie jest kompletna funkcja produkcyjna: nie ma jeszcze frontendowej Mini App wywołującej `navigator.credentials.create/get`, testów kryptograficznych end-to-end z rzeczywistymi authenticatorami, testów Telegram WebView, pełnego procesu odzyskiwania ani przeglądu bezpieczeństwa. Rate limiting musi zostać dodany na warstwie API/gateway przed wystawieniem publicznym. Nie deklarujemy zgodności Telegram Android/iOS/Desktop bez testów na rzeczywistych klientach.
 
@@ -122,7 +122,7 @@ Frontend React + TypeScript w katalogu `miniapp/` obsługuje bezpośrednie endpo
 
 Klient przekazuje Telegram `initData` wyłącznie w nagłówku `X-Telegram-Init-Data`, a cookie sesyjne przez `credentials: include`. Nie zapisuje tokenów sesyjnych w JavaScript i nie oferuje PIN-u.
 
-Handoff do zewnętrznej przeglądarki celowo nie jest częścią tego PR. Wymaga osobnych endpointów backendowych, atomowego zużycia biletów i testów na rzeczywistych klientach Telegram. Nie należy pokazywać przycisku handoff, dopóki zależny backend nie zostanie scalony i zweryfikowany.
+Jednorazowy handoff do zewnętrznej przeglądarki jest implementowany w osobnym PR Issue #15. Sesja powstaje dopiero po redeem biletu w oryginalnym Telegram WebView. Walidacja na rzeczywistych klientach Telegram i niezależny security review pozostają wymagane przed produkcją.
 
 
 ## Rate limiting endpointów Passkey
@@ -136,3 +136,23 @@ Wartości można zmienić przez `AUTH_RATE_LIMIT_MAX_REQUESTS`, `AUTH_RATE_LIMIT
 Dla konta używany jest HMAC z tokenem bota, a nie surowy Telegram ID. Niepoprawne lub brakujące `initData` nadal podlega limitowi IP; limit konta jest naliczany dopiero po poprawnej weryfikacji Telegrama. Przekroczenie limitu zwraca HTTP 429 z nagłówkiem `Retry-After`.
 
 Adres IP pochodzi wyłącznie z bezpośredniego połączenia. `X-Forwarded-For` nie jest zaufany, dopóki nie zostanie skonfigurowana jawna lista zaufanych reverse proxy. Limity recovery pozostają osobnym zadaniem. Wygasłe buckety można usuwać poleceniem `python -m app.security.rate_limit_maintenance`; domyślna retencja wynosi 24 godziny i można ją zmienić przez `AUTH_RATE_LIMIT_RETENTION_SECONDS` (1 godzina–365 dni). Repozytorium nie instaluje harmonogramu — operator powinien uruchamiać polecenie cyklicznie (np. raz na godzinę) przez cron lub systemd timer.
+
+
+## Jednorazowy handoff do zewnętrznej przeglądarki
+
+Handoff jest związany z konkretnym użytkownikiem, celem `authentication` i skrótem dokładnego Telegram `initData` z żądania wydającego bilet. Surowy token ma 256 bitów entropii; w bazie przechowywany jest wyłącznie jego SHA-256. Domyślny TTL to 120 sekund, konfigurowalny w zakresie 30–300 sekund.
+
+Przepływ jest dwuetapowy, aby nie zakładać współdzielenia cookie pomiędzy Telegram WebView a zewnętrzną przeglądarką:
+
+1. Telegram Mini App żąda biletu i otwiera `handoff.html#ticket=...`. Token trafia do fragmentu URL, nigdy do query string; strona zewnętrzna odczytuje go i natychmiast usuwa fragment przez `history.replaceState`.
+2. Zewnętrzna przeglądarka atomowo zużywa bilet, pobiera discoverable WebAuthn challenge i potwierdza Passkey. Nie wysyła Telegram `initData` i nie otrzymuje sesji aplikacyjnej.
+3. Po poprawnym WebAuthn backend oznacza bilet jako zweryfikowany. Użytkownik wraca do oryginalnej Mini App i wybiera „Sprawdź status logowania”.
+4. Oryginalna Mini App wysyła token wraz z oryginalnym Telegram `initData` do endpointu redeem. Backend porównuje hash kontekstu, użytkownika i cel, atomowo zużywa redemption i dopiero wtedy ustawia cookie HttpOnly w Telegram WebView.
+
+Dzięki temu sesja powstaje dopiero po poprawnym Passkey i w kontekście, w którym Mini App będzie z niej korzystać. Jeśli oryginalna Mini App zostanie zamknięta i utraci stan tokenu lub Telegram wyda inne `initData`, użytkownik musi rozpocząć handoff ponownie; nie należy osłabiać wiązania kontekstu.
+
+Bilety i challenge są jednorazowe i atomowo zużywane. Odpowiedzi dla braku konta/Passkey nie ujawniają listy credential IDs ani ich liczby; używane są discoverable credentials (`residentKey=required`). Weryfikacja nie tworzy sesji w zewnętrznej przeglądarce. Rate limiting obejmuje wydawanie, options, verify i redeem.
+
+Logi audytowe zawierają wyłącznie nazwę zdarzenia, wewnętrzny user ID i niesekretny powód odrzucenia. Nie logują tokenu, jego hasha, Telegram `initData`, credential ID ani odpowiedzi WebAuthn.
+
+**Pozostałe bramki przed produkcją:** testy end-to-end na rzeczywistych klientach Telegram Android/iOS/Desktop, testy z fizycznymi authenticatorami, sprawdzenie zachowania `Telegram.WebApp.openLink` i niezależny security review.

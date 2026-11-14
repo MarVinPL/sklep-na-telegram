@@ -48,4 +48,4 @@ jobs:
           node-version: "22"
       - name: Build Telegram Mini App
         working-directory: miniapp
-        run: npm install && npm run build
+        run: npm install && npm run build && test -f dist/handoff.html

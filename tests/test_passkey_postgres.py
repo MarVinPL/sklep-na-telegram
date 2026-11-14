@@ -6,13 +6,19 @@ from threading import Barrier
 from types import SimpleNamespace
 
 import pytest
-from fastapi import HTTPException
+from fastapi import HTTPException, Response
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 
 from app.db import Base
-from app.models import AuthRateLimit, User, WebAuthnChallenge
-from app.routers.passkeys import _consume_challenge, _get_or_create_user
+from app.models import AuthRateLimit, AuthSession, PasskeyHandoff, User, WebAuthnChallenge
+from app.routers.passkeys import (
+    HandoffOptionsRequest,
+    _consume_challenge,
+    _consume_handoff,
+    _get_or_create_user,
+    redeem_handoff,
+)
 from app.security.rate_limit import consume_ip_rate_limit
 
 DATABASE_URL = os.getenv("TEST_DATABASE_URL")
@@ -139,3 +145,114 @@ def test_postgres_rate_limit_upsert_is_atomic_under_concurrency(
         ).all()
         assert len(rows) == 1
         assert rows[0].request_count == worker_count
+
+
+
+def test_postgres_handoff_token_can_be_consumed_only_once_concurrently(
+    postgres_session_factory,
+) -> None:
+    raw_token = "handoff-concurrency-token-" + ("x" * 32)
+    token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+    with postgres_session_factory() as setup:
+        user = User(telegram_user_id="pg-handoff-race")
+        setup.add(user)
+        setup.flush()
+        setup.add(
+            PasskeyHandoff(
+                user_id=user.id,
+                purpose="authentication",
+                token_hash=token_hash,
+                context_hash=hashlib.sha256(b"original-telegram-init-data").hexdigest(),
+                expires_at=datetime.now(UTC) + timedelta(minutes=2),
+            )
+        )
+        setup.commit()
+
+    barrier = Barrier(2)
+
+    def consume():
+        with postgres_session_factory() as session:
+            barrier.wait(timeout=10)
+            try:
+                result = _consume_handoff(session, raw_token)
+                session.commit()
+                return result[1]
+            except HTTPException:
+                session.rollback()
+                return None
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(lambda _: consume(), range(2)))
+
+    assert sum(result is not None for result in results) == 1
+    with postgres_session_factory() as session:
+        handoff = session.scalar(
+            select(PasskeyHandoff).where(PasskeyHandoff.token_hash == token_hash)
+        )
+        assert handoff is not None
+        assert handoff.consumed_at is not None
+
+
+
+def test_postgres_handoff_redemption_creates_only_one_session(
+    postgres_session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.routers import passkeys
+
+    raw_token = "handoff-redemption-race-" + ("y" * 32)
+    init_data = "signed-original-telegram-context"
+    token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+    context_hash = hashlib.sha256(init_data.encode()).hexdigest()
+    monkeypatch.setattr(
+        passkeys,
+        "verify_telegram_init_data",
+        lambda raw: {"telegram_user_id": "pg-handoff-redeem"},
+    )
+    monkeypatch.setattr(
+        passkeys,
+        "get_settings",
+        lambda: SimpleNamespace(
+            app_env="production",
+            auth_cookie_name="shop_session",
+            auth_session_ttl=3600,
+        ),
+    )
+    with postgres_session_factory() as setup:
+        user = User(telegram_user_id="pg-handoff-redeem")
+        setup.add(user)
+        setup.flush()
+        setup.add(
+            PasskeyHandoff(
+                user_id=user.id,
+                purpose="authentication",
+                token_hash=token_hash,
+                context_hash=context_hash,
+                expires_at=datetime.now(UTC) + timedelta(minutes=2),
+                consumed_at=datetime.now(UTC),
+                verified_at=datetime.now(UTC),
+            )
+        )
+        setup.commit()
+
+    barrier = Barrier(2)
+
+    def redeem():
+        with postgres_session_factory() as session:
+            barrier.wait(timeout=10)
+            response = Response()
+            return redeem_handoff(
+                HandoffOptionsRequest(handoff_token=raw_token),
+                response,
+                init_data,
+                session,
+            )["authenticated"]
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(lambda _: redeem(), range(2)))
+
+    assert sorted(results) == [False, True]
+    with postgres_session_factory() as session:
+        active_sessions = session.scalars(
+            select(AuthSession).where(AuthSession.revoked_at.is_(None))
+        ).all()
+        assert len(active_sessions) == 1

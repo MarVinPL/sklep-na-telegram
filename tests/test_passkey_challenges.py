@@ -9,7 +9,9 @@ from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
 from app.db import Base
-from app.models import User
+from app.models import AuthSession, User
+from starlette.requests import Request
+from starlette.responses import Response
 from app.routers import passkeys
 
 
@@ -107,3 +109,86 @@ def test_expired_challenge_is_rejected(db: Session) -> None:
         )
 
     assert error.value.status_code == 400
+
+
+
+def request_with_cookie(cookie: str) -> Request:
+    return Request(
+        {
+            "type": "http",
+            "asgi": {"version": "3.0"},
+            "http_version": "1.1",
+            "method": "POST",
+            "scheme": "http",
+            "path": "/",
+            "raw_path": b"/",
+            "query_string": b"",
+            "headers": [(b"cookie", cookie.encode())],
+            "client": ("test", 123),
+            "server": ("test", 80),
+        }
+    )
+
+
+def test_successful_authentication_rotates_presented_session(
+    db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        passkeys,
+        "get_settings",
+        lambda: SimpleNamespace(
+            auth_cookie_name="shop_session", auth_session_ttl=3600, app_env="development"
+        ),
+    )
+    user = make_user(db, "1001")
+    old_token = "previous-session-token"
+    old_session = AuthSession(
+        user_id=user.id,
+        token_hash=passkeys.hashlib.sha256(old_token.encode()).hexdigest(),
+        expires_at=datetime.now(UTC) + timedelta(hours=1),
+    )
+    db.add(old_session)
+    db.commit()
+
+    response = Response()
+    passkeys._session_cookie(db, user, response, request_with_cookie(f"shop_session={old_token}"))
+
+    db.refresh(old_session)
+    active_sessions = db.scalars(
+        select(AuthSession).where(
+            AuthSession.user_id == user.id,
+            AuthSession.revoked_at.is_(None),
+        )
+    ).all()
+    assert old_session.revoked_at is not None
+    assert len(active_sessions) == 1
+    assert "shop_session=" in response.headers["set-cookie"]
+    assert old_token not in response.headers["set-cookie"]
+
+
+def test_passkey_revocation_invalidates_all_active_sessions(db: Session) -> None:
+    user = make_user(db, "1001")
+    now = datetime.now(UTC)
+    active = [
+        AuthSession(
+            user_id=user.id,
+            token_hash=passkeys.hashlib.sha256(f"token-{index}".encode()).hexdigest(),
+            expires_at=now + timedelta(hours=1),
+        )
+        for index in range(2)
+    ]
+    already_revoked = AuthSession(
+        user_id=user.id,
+        token_hash=passkeys.hashlib.sha256(b"revoked-token").hexdigest(),
+        expires_at=now + timedelta(hours=1),
+        revoked_at=now - timedelta(minutes=1),
+    )
+    db.add_all([*active, already_revoked])
+    db.commit()
+
+    count = passkeys._revoke_user_sessions(db, user.id, now)
+    db.commit()
+
+    assert count == 2
+    assert all(session.revoked_at == now for session in active)
+    assert already_revoked.revoked_at == now - timedelta(minutes=1)

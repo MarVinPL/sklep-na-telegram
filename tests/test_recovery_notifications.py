@@ -149,5 +149,9 @@ def test_transient_failure_is_retried_with_backoff(monkeypatch):
         rows = db.scalars(select(NotificationOutbox)).all()
         assert all(row.status == "retry" for row in rows)
         assert all(row.attempt_count == 1 for row in rows)
-        assert all(row.next_attempt_at > datetime.now(UTC) for row in rows)
+        assert all(
+            (row.next_attempt_at.replace(tzinfo=UTC) if row.next_attempt_at.tzinfo is None else row.next_attempt_at)
+            > datetime.now(UTC)
+            for row in rows
+        )
     engine.dispose()

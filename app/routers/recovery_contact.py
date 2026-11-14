@@ -8,6 +8,7 @@ from datetime import UTC, datetime, timedelta
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from webauthn import (
     generate_authentication_options,
@@ -203,7 +204,11 @@ def registration_verify(
     credential.device_type = str(verified.credential_device_type)
     credential.backed_up = verified.credential_backed_up
     db.add(contact)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="A recovery contact is already registered") from None
 
     try:
         send_email(

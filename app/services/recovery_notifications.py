@@ -1,7 +1,6 @@
 import json
 import urllib.error
 import urllib.request
-
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select

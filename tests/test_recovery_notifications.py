@@ -221,3 +221,22 @@ def test_stalled_operator_approval_expires_after_seven_days(monkeypatch):
         assert case.status == "expired"
         assert case.veto_token_hash is None
     engine.dispose()
+
+
+
+def test_worker_completes_hold_and_queues_end_notifications(monkeypatch):
+    _configure_crypto(monkeypatch)
+    engine = _database()
+    with Session(engine) as db:
+        case = _case(db, status="hold_active")
+        case.hold_started_at = datetime.now(UTC) - timedelta(hours=25)
+        case.hold_ends_at = datetime.now(UTC) - timedelta(hours=1)
+        processed = notifications.expire_due_recovery_cases(db)
+        db.refresh(case)
+        assert processed == 1
+        assert case.status == "hold_complete_pending_review"
+        notices = db.scalars(
+            select(NotificationOutbox).where(NotificationOutbox.event_key == f"{case.id}:hold_complete")
+        ).all()
+        assert len(notices) == 2
+    engine.dispose()
